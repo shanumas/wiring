@@ -7,7 +7,7 @@
       "name": "Vertikal Fönsterbänkskanal",
       "en_name": "Vertical Window Sill Channel",
       "color": "#f59e0b",
-      "size": null,
+      "size": "per_drawing",
       "ok_height": "900",
       "uk_height": null,
       "is_vertical": true,
@@ -22,7 +22,7 @@
       "name": "Vertikal Kabelränna",
       "en_name": "Vertical Cable Tray",
       "color": "#10b981",
-      "size": null,
+      "size": "per_drawing",
       "ok_height": null,
       "uk_height": null,
       "is_vertical": true,
@@ -37,7 +37,7 @@
       "name": "Vertikal Kabelstege",
       "en_name": "Vertical Cable Ladder",
       "color": "#3b82f6",
-      "size": null,
+      "size": "per_drawing",
       "ok_height": null,
       "uk_height": null,
       "is_vertical": true,
@@ -266,54 +266,96 @@
   ],
   "summary": [
     {
-      "system": "KS",
-      "name": "Kabelstege",
-      "width_mm": 400,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": 2700,
-      "is_vertical": false,
-      "fire_rating": "EI 30-C",
-      "occurrences": 3
-    },
-    {
-      "system": "KS",
-      "name": "Kabelstege",
-      "width_mm": 400,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": 2700,
-      "is_vertical": false,
-      "fire_rating": null,
-      "occurrences": 2
-    },
-    {
       "system": "FBK",
       "name": "Fönsterbänkskanal",
+      "orientation": "horizontal",
       "width_mm": 100,
       "ok_ofg_mm": 2700,
       "uk_ofg_mm": 200,
-      "is_vertical": false,
       "fire_rating": null,
-      "occurrences": 3
-    },
-    {
-      "system": "KS",
-      "name": "Kabelstege",
-      "width_mm": 400,
-      "ok_ofg_mm": 2700,
-      "uk_ofg_mm": 1000,
-      "is_vertical": false,
-      "fire_rating": null,
-      "occurrences": 1
+      "count": 3
     },
     {
       "system": "KR",
       "name": "Kabelränna",
+      "orientation": "horizontal",
       "width_mm": 400,
       "ok_ofg_mm": 2700,
       "uk_ofg_mm": 1000,
-      "is_vertical": false,
       "fire_rating": null,
-      "occurrences": 1
+      "count": 1
+    },
+    {
+      "system": "KS",
+      "name": "Kabelstege",
+      "orientation": "horizontal",
+      "width_mm": 400,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": 2700,
+      "fire_rating": "EI 30-C",
+      "count": 3
+    },
+    {
+      "system": "KS",
+      "name": "Kabelstege",
+      "orientation": "horizontal",
+      "width_mm": 400,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": 2700,
+      "fire_rating": null,
+      "count": 2
+    },
+    {
+      "system": "KS",
+      "name": "Kabelstege",
+      "orientation": "horizontal",
+      "width_mm": 400,
+      "ok_ofg_mm": 2700,
+      "uk_ofg_mm": 1000,
+      "fire_rating": null,
+      "count": 1
+    },
+    {
+      "system": "FBK",
+      "name": "Vertikal Fönsterbänkskanal",
+      "orientation": "vertical",
+      "width_mm": "per_drawing",
+      "ok_ofg_mm": 900,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": "legend",
+      "vertical_reference_height_mm": 900
+    },
+    {
+      "system": "KR",
+      "name": "Vertikal Kabelränna",
+      "orientation": "vertical",
+      "width_mm": "per_drawing",
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": "legend"
+    },
+    {
+      "system": "KS",
+      "name": "Vertikal Kabelstege",
+      "orientation": "vertical",
+      "width_mm": "per_drawing",
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": "legend"
+    },
+    {
+      "system": "Tomrör",
+      "name": "Tomrör",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": "present",
+      "diameter_mm": 16
     }
   ]
 }

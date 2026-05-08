@@ -126,8 +126,81 @@
     #tooltip .tt-row strong { color: #e2e8f0; }
 
     /* ── sidebar ── */
+    /* ── sidebar tabs ── */
+    .sidebar-tabs {
+      flex: 0 0 auto;
+      display: flex;
+      border-bottom: 1px solid #334155;
+    }
+    .sidebar-tab {
+      flex: 1;
+      padding: 9px 0;
+      font-size: 11px;
+      font-weight: 600;
+      text-align: center;
+      color: #64748b;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      border-bottom: 2px solid transparent;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .sidebar-tab.active {
+      color: #e2e8f0;
+      border-bottom-color: #3b82f6;
+    }
+    .sidebar-panel { display: none; flex: 1 1 0; overflow-y: auto; padding: 8px 0; }
+    .sidebar-panel.active { display: block; }
+
+    /* ── estimate cards ── */
+    .est-card {
+      padding: 10px 16px;
+      border-left: 3px solid transparent;
+    }
+    .est-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .est-sub {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 3px;
+      line-height: 1.5;
+    }
+    .est-cost {
+      font-size: 13px;
+      font-weight: 700;
+      color: #34d399;
+    }
+    .est-conf {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .est-totals {
+      margin: 8px 12px;
+      padding: 10px 12px;
+      background: #0f172a;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      font-size: 12px;
+    }
+    .est-totals .tot-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+      color: #94a3b8;
+    }
+    .est-totals .tot-row strong { color: #e2e8f0; }
+    .est-totals .grand { border-top: 1px solid #334155; margin-top: 6px; padding-top: 6px; color: #f1f5f9; font-weight: 700; }
+
     #sidebar {
-      flex: 0 0 260px;
+      flex: 0 0 280px;
       background: #1e293b;
       border-left: 1px solid #334155;
       display: flex;
@@ -214,8 +287,17 @@
   </div>
 
   <nav id="sidebar">
-    <h2>Components <span id="count"></span></h2>
-    <div id="comp-list"></div>
+    <div class="sidebar-tabs">
+      <div class="sidebar-tab active" data-panel="comp-panel">Components</div>
+      <div class="sidebar-tab"        data-panel="est-panel">Estimate</div>
+    </div>
+    <div id="comp-panel" class="sidebar-panel active">
+      <div style="padding:6px 16px 2px;font-size:11px;color:#475569" id="count"></div>
+      <div id="comp-list"></div>
+    </div>
+    <div id="est-panel" class="sidebar-panel">
+      <div id="est-list"></div>
+    </div>
   </nav>
 </main>
 
@@ -227,15 +309,17 @@
   let activeId = null;
 
   // ── fetch data & build UI ─────────────────────────────────────────────────
+  let summary = [];
+
   fetch('/components')
     .then(r => r.json())
     .then(data => {
       components = data.components;
+      summary    = data.summary;
       pageW = data.page_width;
       pageH = data.page_height;
-      // Only drawn instances (bbox !== null) get overlays
       const drawn = components.filter(c => c.bbox !== null);
-      document.getElementById('count').textContent = `(${drawn.length} drawn)`;
+      document.getElementById('count').textContent = `(${drawn.length} instances)`;
       buildOverlays();
       buildSidebar();
     });
@@ -279,71 +363,109 @@
   window.addEventListener('resize', buildOverlays);
 
   // ── sidebar ───────────────────────────────────────────────────────────────
+  const COLOR = {
+    KS: "#3b82f6", KR: "#10b981", FBK: "#f59e0b", "Tomrör": "#8b5cf6"
+  };
+
   function buildSidebar() {
     const list = document.getElementById('comp-list');
 
-    const drawn  = components.filter(c => c.bbox !== null);
-    const legend = components.filter(c => c.bbox === null);
+    // ── Drawn + counted variants (from summary, count is a number) ────────
+    const drawnSummary  = summary.filter(s => typeof s.count === 'number');
+    const legendSummary = summary.filter(s => typeof s.count !== 'number');
+    const col = s => COLOR[s.system] || "#94a3b8";
 
-    // Drawn instances
-    drawn.forEach(c => {
+    drawnSummary.forEach(s => {
       const card = document.createElement('div');
       card.className = 'comp-card';
-      card.dataset.id = c.id;
-      card.style.setProperty('--c', c.color);
+      card.style.setProperty('--c', col(s));
 
       const heights = [];
-      if (c.ok_height) heights.push(`ÖK ${c.ok_height} mm ÖFG`);
-      if (c.uk_height) heights.push(`UK ${c.uk_height} mm ÖFG`);
-      const fireBadge = c.fire_rating
-        ? `<span class="comp-card-badge" style="background:#ef444422;color:#ef4444;margin-left:4px">${c.fire_rating}</span>`
+      if (s.ok_ofg_mm) heights.push(`ÖK ${s.ok_ofg_mm} mm ÖFG`);
+      if (s.uk_ofg_mm) heights.push(`UK ${s.uk_ofg_mm} mm ÖFG`);
+
+      const fireBadge = s.fire_rating
+        ? `<span class="comp-card-badge" style="background:#ef444422;color:#ef4444;margin-left:4px">${s.fire_rating}</span>`
         : '';
-      const vertTag = c.is_vertical ? ' <em style="color:#94a3b8;font-size:10px">VERT</em>' : '';
+      const vertTag = s.orientation === 'vertical'
+        ? ' <em style="color:#94a3b8;font-size:10px">VERT</em>' : '';
+      const widthStr = s.width_mm === 'per_drawing' ? 'per drawing'
+                     : s.width_mm ? `${s.width_mm} mm` : '';
+      const countBadge = `<span style="margin-left:auto;font-size:11px;color:#64748b">×${s.count}</span>`;
 
       card.innerHTML = `
-        <div class="comp-card-title">
-          <span class="comp-card-badge"
-                style="background:${c.color}22;color:${c.color}">${c.type}</span>
-          ${c.name} ${c.size ? c.size + ' mm' : ''}${vertTag}${fireBadge}
+        <div class="comp-card-title" style="justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+            <span class="comp-card-badge"
+                  style="background:${col(s)}22;color:${col(s)}">${s.system}</span>
+            ${s.name} ${widthStr}${vertTag}${fireBadge}
+          </div>
+          ${countBadge}
         </div>
         <div class="comp-card-sub">${heights.join(' · ') || 'No height data'}</div>
       `;
 
-      card.addEventListener('click', () => selectComponent(c.id));
+      // clicking highlights all matching instances on the drawing
+      card.addEventListener('click', () => selectVariant(s));
       list.appendChild(card);
     });
 
-    // Legend / notes section
-    if (legend.length) {
+    // ── Legend / notes entries ────────────────────────────────────────────
+    if (legendSummary.length) {
       const sep = document.createElement('div');
       sep.style.cssText = 'padding:8px 16px 4px;font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #334155;margin-top:4px';
       sep.textContent = 'From legend / notes';
       list.appendChild(sep);
 
-      legend.forEach(c => {
+      legendSummary.forEach(s => {
         const card = document.createElement('div');
         card.className = 'comp-card';
-        card.dataset.id = c.id;
-        card.style.setProperty('--c', c.color);
+        card.style.setProperty('--c', col(s));
         card.style.opacity = '0.75';
 
         const heights = [];
-        if (c.ok_height) heights.push(`ÖK ${c.ok_height} mm ÖFG`);
-        if (c.uk_height) heights.push(`UK ${c.uk_height} mm ÖFG`);
-        const diam = c.diameter_mm ? `Ø${c.diameter_mm} mm` : '';
-        const sub = [diam, heights.join(' · ')].filter(Boolean).join('  ') || 'Size per drawing';
+        if (s.ok_ofg_mm) heights.push(`ÖK ${s.ok_ofg_mm} mm ÖFG`);
+        if (s.uk_ofg_mm) heights.push(`UK ${s.uk_ofg_mm} mm ÖFG`);
+        const diam = s.diameter_mm ? `Ø${s.diameter_mm} mm` : '';
+        const vertTag = s.orientation === 'vertical'
+          ? ' <em style="color:#94a3b8;font-size:10px">VERT</em>' : '';
+        const widthStr = s.width_mm === 'per_drawing' ? 'per drawing'
+                       : s.width_mm ? `${s.width_mm} mm` : '';
+        const sub = [diam, heights.join(' · ')].filter(Boolean).join('  ')
+                    || (s.width_mm === 'per_drawing' ? 'Size per drawing' : 'No height data');
 
         card.innerHTML = `
           <div class="comp-card-title">
             <span class="comp-card-badge"
-                  style="background:${c.color}22;color:${c.color}">${c.type}</span>
-            ${c.name}
+                  style="background:${col(s)}22;color:${col(s)}">${s.system}</span>
+            ${s.name} ${widthStr}${vertTag}
           </div>
           <div class="comp-card-sub">${sub}</div>
         `;
         list.appendChild(card);
       });
     }
+  }
+
+  // ── select all drawn instances matching a summary variant ─────────────
+  function selectVariant(s) {
+    const matches = components.filter(c =>
+      c.bbox !== null &&
+      c.type        === s.system &&
+      (c.size ? String(c.size) : null) === (s.width_mm !== 'per_drawing' ? String(s.width_mm) : null) &&
+      (c.ok_height  || null) === (s.ok_ofg_mm  ? String(s.ok_ofg_mm)  : null) &&
+      (c.uk_height  || null) === (s.uk_ofg_mm  ? String(s.uk_ofg_mm)  : null) &&
+      (c.fire_rating || null) === (s.fire_rating || null)
+    ).map(c => c.id);
+
+    const allSame = matches.length > 0 &&
+      matches.every(id => document.querySelector(`.comp-overlay[data-id="${id}"]`)?.classList.contains('active'));
+
+    // Toggle: if all already active, deselect all; otherwise select all
+    const nextState = !allSame;
+    document.querySelectorAll('.comp-overlay, .comp-card').forEach(el => {
+      el.classList.toggle('active', nextState && matches.includes(el.dataset.id));
+    });
   }
 
   // ── selection ─────────────────────────────────────────────────────────────
@@ -402,6 +524,95 @@
 
   function hideTooltip() {
     tt.style.display = 'none';
+  }
+
+  // ── tab switching ─────────────────────────────────────────────────────────
+  document.querySelectorAll('.sidebar-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.panel).classList.add('active');
+    });
+  });
+
+  // ── estimation panel ──────────────────────────────────────────────────────
+  const CONF_COLOR = c =>
+    c >= 0.85 ? '#34d399' : c >= 0.65 ? '#fbbf24' : '#f87171';
+
+  fetch('/estimate')
+    .then(r => r.json())
+    .then(data => buildEstimatePanel(data));
+
+  function buildEstimatePanel(data) {
+    const list = document.getElementById('est-list');
+    const t    = data.totals;
+
+    // ── totals block ──────────────────────────────────────────────────────
+    const totDiv = document.createElement('div');
+    totDiv.className = 'est-totals';
+    const bySystemRows = Object.entries(t.by_system)
+      .sort((a, b) => b[1].total_cost_sek - a[1].total_cost_sek)
+      .map(([sys, v]) =>
+        `<div class="tot-row"><span>${sys}</span><strong>${v.total_length_m} m &nbsp; ${v.total_cost_sek.toLocaleString()} SEK</strong></div>`
+      ).join('');
+    totDiv.innerHTML = `
+      ${bySystemRows}
+      <div class="tot-row grand">
+        <span>Total (${t.total_length_m} m)</span>
+        <strong>${t.total_cost_sek.toLocaleString()} SEK</strong>
+      </div>
+      <div style="font-size:10px;color:#475569;margin-top:6px">Excl. VAT · Indicative rates</div>
+    `;
+    list.appendChild(totDiv);
+
+    // ── per-item cards ────────────────────────────────────────────────────
+    data.items.filter(i => typeof i.count === 'number').forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'est-card';
+      const c   = COLOR[item.system] || '#94a3b8';
+      card.style.borderLeftColor = c;
+
+      const fr  = item.fire_rating
+        ? `<span class="comp-card-badge" style="background:#ef444422;color:#ef4444">${item.fire_rating}</span>` : '';
+      const v   = item.orientation === 'vertical'
+        ? `<span class="comp-card-badge" style="background:#8b5cf622;color:#8b5cf6">VERT</span>` : '';
+      const confColor = CONF_COLOR(item.confidence);
+      const confBadge = `<span class="est-conf" style="background:${confColor}22;color:${confColor}">${(item.confidence * 100).toFixed(0)}%</span>`;
+
+      const heightStr = [
+        item.ok_ofg_mm ? `ÖK ${item.ok_ofg_mm}` : '',
+        item.uk_ofg_mm ? `UK ${item.uk_ofg_mm}` : '',
+      ].filter(Boolean).join(' / ') || '—';
+
+      const confNotes = item.confidence_notes?.length
+        ? `<div style="font-size:10px;color:#475569;margin-top:2px">${item.confidence_notes.join(' · ')}</div>`
+        : '';
+
+      card.innerHTML = `
+        <div class="est-title">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span class="comp-card-badge" style="background:${c}22;color:${c}">${item.system}</span>
+            ${item.width_mm === 'per_drawing' ? 'per drawing' : item.width_mm + ' mm'}
+            ${fr}${v}
+            <span style="color:#64748b;font-size:11px">×${item.count}</span>
+          </div>
+          ${confBadge}
+        </div>
+        <div class="est-sub">
+          ${heightStr} &nbsp;·&nbsp;
+          H: ${item.horizontal_length_mm / 1000}m &nbsp;·&nbsp;
+          V: ${item.vertical_length_mm / 1000}m &nbsp;·&nbsp;
+          ${item.total_length_m}m total
+          <br>
+          ${item.unit_cost_sek_per_m} SEK/m &nbsp;·&nbsp;
+          <span class="est-cost">${item.total_cost_sek.toLocaleString()} SEK</span>
+          <span style="color:#475569"> (${item.length_source})</span>
+        </div>
+        ${confNotes}
+      `;
+      list.appendChild(card);
+    });
   }
 </script>
 </body>

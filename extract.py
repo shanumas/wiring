@@ -120,7 +120,7 @@ def parse_vertical_legend(text):
             "name":        "Vertikal " + COMP_META[code]["name"],
             "en_name":     "Vertical " + COMP_META[code]["en"],
             "color":       COMP_META[code]["color"],
-            "size":        None,   # "bredd & höjd enligt ritning"
+            "size":        "per_drawing",   # "bredd & höjd enligt ritning"
             "ok_height":   ok_m.group(1) if ok_m else None,
             "uk_height":   uk_m.group(1) if uk_m else None,
             "is_vertical": True,
@@ -252,17 +252,51 @@ def extract(pdf_path=PDF_PATH):
 
     summary = []
     for sig, count in sig_counts.items():
-        p = sig_proto[sig]
+        p      = sig_proto[sig]
+        is_vert = p.get("is_vertical", False)
+        raw_size = p.get("size")
         summary.append({
-            "system":        p["type"],
-            "name":          p["name"],
-            "width_mm":      int(p["size"]) if p.get("size") else None,
-            "ok_ofg_mm":     int(p["ok_height"]) if p.get("ok_height") else None,
-            "uk_ofg_mm":     int(p["uk_height"]) if p.get("uk_height") else None,
-            "is_vertical":   p.get("is_vertical", False),
-            "fire_rating":   p.get("fire_rating"),
-            "occurrences":   count,
+            "system":       p["type"],
+            "name":         p["name"],
+            "orientation":  "vertical" if is_vert else "horizontal",
+            "width_mm":     int(raw_size) if raw_size else "per_drawing",
+            "ok_ofg_mm":    int(p["ok_height"]) if p.get("ok_height") else None,
+            "uk_ofg_mm":    int(p["uk_height"]) if p.get("uk_height") else None,
+            "fire_rating":  p.get("fire_rating"),
+            "count":        count,
         })
+
+    # Sort: by system code, then fire-rating (rated first), then height signature
+    summary.sort(key=lambda s: (
+        s["system"],
+        0 if s["fire_rating"] else 1,
+        s.get("ok_ofg_mm") or 0,
+        s.get("uk_ofg_mm") or 0,
+    ))
+
+    # Add legend-only types (vertical systems, Tomrör) to summary
+    for c in components:
+        if c.get("occurrences") in ("legend", "present"):
+            raw_size = c.get("size")
+            is_vert  = c.get("is_vertical", False)
+            ok_val   = int(c["ok_height"]) if c.get("ok_height") else None
+            entry = {
+                "system":       c["type"],
+                "name":         c["name"],
+                "orientation":  "vertical" if is_vert else "horizontal",
+                "width_mm":     int(raw_size) if raw_size and raw_size != "per_drawing"
+                                else ("per_drawing" if is_vert else None),
+                "ok_ofg_mm":    ok_val,
+                "uk_ofg_mm":    int(c["uk_height"]) if c.get("uk_height") else None,
+                "fire_rating":  c.get("fire_rating"),
+                "count":        c["occurrences"],   # "legend" or "present"
+            }
+            # Alias: vertical reference height has a dedicated key for clarity
+            if is_vert and ok_val is not None:
+                entry["vertical_reference_height_mm"] = ok_val
+            if c.get("diameter_mm"):
+                entry["diameter_mm"] = c["diameter_mm"]
+            summary.append(entry)
 
     w = page.rect.width
     h = page.rect.height
@@ -298,8 +332,12 @@ if __name__ == "__main__":
 
     print("\n── Aggregated summary ───────────────────────────────────────────")
     for s in data["summary"]:
-        fr = f"  [{s['fire_rating']}]" if s.get("fire_rating") else ""
-        v  = " VERTICAL" if s.get("is_vertical") else ""
-        print(f"  {s['system']}{v} {s.get('width_mm') or '?'}mm  "
-              f"ÖK={s.get('ok_ofg_mm')} UK={s.get('uk_ofg_mm')}{fr}  "
-              f"× {s['occurrences']}")
+        fr  = f"  [{s['fire_rating']}]" if s.get("fire_rating") else ""
+        v   = " VERTICAL" if s.get("orientation") == "vertical" else ""
+        vrh = f"  ref={s['vertical_reference_height_mm']}mm" if s.get("vertical_reference_height_mm") else ""
+        w = s.get('width_mm')
+        wstr = f"{w}mm" if isinstance(w, int) else (w or '—')
+        dstr = f" Ø{s['diameter_mm']}mm" if s.get("diameter_mm") else ""
+        print(f"  {s['system']}{v} {wstr}{dstr}  "
+              f"ÖK={s.get('ok_ofg_mm')} UK={s.get('uk_ofg_mm')}{vrh}{fr}  "
+              f"× {s['count']}")

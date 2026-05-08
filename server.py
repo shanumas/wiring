@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse, Response, JSONResponse
 import fitz
 import json
 from extract import extract
+from estimate import estimate
 
 app = FastAPI()
 
@@ -21,6 +22,7 @@ _pix   = _page.get_pixmap(matrix=_mat)
 _png   = _pix.tobytes("png")
 
 _components = extract()                   # parse once, cache result
+_estimate   = estimate()                  # run all 4 estimation stages
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -32,6 +34,11 @@ def get_image():
 @app.get("/components")
 def get_components():
     return JSONResponse(_components)
+
+
+@app.get("/estimate")
+def get_estimate():
+    return JSONResponse(_estimate)
 
 
 @app.get("/", response_class=HTMLResponse)
