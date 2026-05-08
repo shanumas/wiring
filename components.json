@@ -1,0 +1,176 @@
+{
+  "page_width": 2384.0,
+  "page_height": 1684.0,
+  "components": [
+    {
+      "id": "KS_0",
+      "type": "KS",
+      "name": "Kabelstege",
+      "en_name": "Cable Ladder",
+      "color": "#3b82f6",
+      "size": "400",
+      "ok_height": null,
+      "uk_height": "2700",
+      "label": "KS 400 UK= 2700 ÖFG",
+      "bbox": [
+        1107.87,
+        1764.0,
+        1133.66,
+        1827.51
+      ]
+    },
+    {
+      "id": "KS_1",
+      "type": "KS",
+      "name": "Kabelstege",
+      "en_name": "Cable Ladder",
+      "color": "#3b82f6",
+      "size": "400",
+      "ok_height": null,
+      "uk_height": "2700",
+      "label": "KS 400 UK= 2700 ÖFG",
+      "bbox": [
+        1105.07,
+        1423.8,
+        1130.76,
+        1487.31
+      ]
+    },
+    {
+      "id": "KS_2",
+      "type": "KS",
+      "name": "Kabelstege",
+      "en_name": "Cable Ladder",
+      "color": "#3b82f6",
+      "size": "400",
+      "ok_height": null,
+      "uk_height": "2700",
+      "label": "KS 400 UK= 2700 ÖFG",
+      "bbox": [
+        1110.77,
+        1078.0,
+        1136.46,
+        1141.51
+      ]
+    },
+    {
+      "id": "KS_3",
+      "type": "KS",
+      "name": "Kabelstege",
+      "en_name": "Cable Ladder",
+      "color": "#3b82f6",
+      "size": "400",
+      "ok_height": null,
+      "uk_height": "2700",
+      "label": "KS 400 UK= 2700 ÖFG",
+      "bbox": [
+        1042.17,
+        600.7,
+        1067.86,
+        664.21
+      ]
+    },
+    {
+      "id": "FBK_4",
+      "type": "FBK",
+      "name": "Fönsterbänkskanal",
+      "en_name": "Window Sill Channel",
+      "color": "#f59e0b",
+      "size": "100",
+      "ok_height": "2700",
+      "uk_height": "200",
+      "label": "FBK 100 ÖK= 2700 ÖFG UK= 200 ÖFG",
+      "bbox": [
+        707.07,
+        275.7,
+        747.56,
+        339.21
+      ]
+    },
+    {
+      "id": "FBK_5",
+      "type": "FBK",
+      "name": "Fönsterbänkskanal",
+      "en_name": "Window Sill Channel",
+      "color": "#f59e0b",
+      "size": "100",
+      "ok_height": "2700",
+      "uk_height": "200",
+      "label": "FBK 100 ÖK= 2700 ÖFG UK= 200 ÖFG",
+      "bbox": [
+        712.67,
+        992.9,
+        753.16,
+        1056.41
+      ]
+    },
+    {
+      "id": "FBK_6",
+      "type": "FBK",
+      "name": "Fönsterbänkskanal",
+      "en_name": "Window Sill Channel",
+      "color": "#f59e0b",
+      "size": "100",
+      "ok_height": "2700",
+      "uk_height": "200",
+      "label": "FBK 100 ÖK= 2700 ÖFG UK= 200 ÖFG",
+      "bbox": [
+        712.67,
+        1867.9,
+        753.16,
+        1931.41
+      ]
+    },
+    {
+      "id": "KS_7",
+      "type": "KS",
+      "name": "Kabelstege",
+      "en_name": "Cable Ladder",
+      "color": "#3b82f6",
+      "size": "400",
+      "ok_height": "2700",
+      "uk_height": "1000",
+      "label": "B B A A A A KS 400 ÖK= 2700 ÖFG UK= 1000 ÖFG",
+      "bbox": [
+        1133.37,
+        1198.9,
+        1173.86,
+        1262.41
+      ]
+    },
+    {
+      "id": "KR_8",
+      "type": "KR",
+      "name": "Kabelränna",
+      "en_name": "Cable Tray",
+      "color": "#10b981",
+      "size": "400",
+      "ok_height": "2700",
+      "uk_height": "1000",
+      "label": "KR 400 ÖK= 2700 ÖFG UK= 1000 ÖFG",
+      "bbox": [
+        1133.37,
+        1316.1,
+        1173.86,
+        1379.61
+      ]
+    },
+    {
+      "id": "KS_9",
+      "type": "KS",
+      "name": "Kabelstege",
+      "en_name": "Cable Ladder",
+      "color": "#3b82f6",
+      "size": "400",
+      "ok_height": null,
+      "uk_height": "2700",
+      "label": "KS 400 UK= 2700 ÖFG",
+      "bbox": [
+        979.77,
+        1304.7,
+        1005.46,
+        1368.21
+      ]
+    }
+  ]
+}
