@@ -255,25 +255,74 @@
       color: #64748b;
       margin-top: 2px;
     }
+    /* ── drawing controls ── */
+    .drawing-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    #drawing-select {
+      background: #0f172a;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      max-width: 200px;
+    }
+    .upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: #1e3a5f;
+      border: 1px solid #3b82f6;
+      border-radius: 5px;
+      color: #93c5fd;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .upload-btn:hover { background: #1e40af; }
+    .upload-btn input[type=file] { display: none; }
+    #upload-status {
+      font-size: 11px;
+      color: #64748b;
+      min-width: 80px;
+    }
+    #upload-status.busy  { color: #fbbf24; }
+    #upload-status.done  { color: #34d399; }
+    #upload-status.error { color: #f87171; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>KV. Läroboken 13 — HUS A DEL 1 PLAN 100</h1>
-  <span>Kanalisation 1:50</span>
+  <h1 id="drawing-title">—</h1>
+  <div class="drawing-controls">
+    <select id="drawing-select" title="Switch drawing"></select>
+    <label class="upload-btn" title="Upload PDF(s)">
+      + Upload PDF
+      <input type="file" id="file-input" accept=".pdf" multiple>
+    </label>
+    <span id="upload-status"></span>
+  </div>
   <div class="legend">
     <div class="legend-item">
-      <div class="legend-dot" style="background:#3b82f6"></div>KS — Cable Ladder
+      <div class="legend-dot" style="background:#3b82f6"></div>KS
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background:#10b981"></div>KR — Cable Tray
+      <div class="legend-dot" style="background:#10b981"></div>KR
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background:#f59e0b"></div>FBK — Window Sill Channel
+      <div class="legend-dot" style="background:#f59e0b"></div>FBK
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background:#8b5cf6"></div>Tomrör — Conduit
+      <div class="legend-dot" style="background:#8b5cf6"></div>Tomrör
     </div>
   </div>
 </header>
@@ -281,7 +330,7 @@
 <main>
   <div id="drawing-pane">
     <div id="image-wrap">
-      <img id="drawing-img" src="/image" alt="Electrical drawing" draggable="false">
+      <img id="drawing-img" src="" alt="Electrical drawing" draggable="false">
       <!-- overlays injected by JS -->
     </div>
   </div>
@@ -305,24 +354,107 @@
 
 <script>
   let components = [];
+  let summary    = [];
   let pageW = 1, pageH = 1;
   let activeId = null;
+  let currentDrawing = null;
+  let currentDrawingType = 'unknown';
 
-  // ── fetch data & build UI ─────────────────────────────────────────────────
-  let summary = [];
+  // ── drawing list + selector ────────────────────────────────────────────────
+  async function loadDrawingList() {
+    const { drawings } = await fetch('/drawings').then(r => r.json());
+    const sel = document.getElementById('drawing-select');
+    sel.innerHTML = drawings.map(n =>
+      `<option value="${n}">${n}</option>`
+    ).join('');
+    if (drawings.length) switchDrawing(drawings[0]);
+  }
 
-  fetch('/components')
-    .then(r => r.json())
-    .then(data => {
-      components = data.components;
-      summary    = data.summary;
-      pageW = data.page_width;
-      pageH = data.page_height;
-      const drawn = components.filter(c => c.bbox !== null);
-      document.getElementById('count').textContent = `(${drawn.length} instances)`;
-      buildOverlays();
-      buildSidebar();
-    });
+  document.getElementById('drawing-select').addEventListener('change', e => {
+    switchDrawing(e.target.value);
+  });
+
+  async function switchDrawing(name) {
+    if (name === currentDrawing) return;
+    currentDrawing = name;
+
+    // Update image immediately (browser streams it)
+    const img = document.getElementById('drawing-img');
+    img.src = `/drawing/${encodeURIComponent(name)}/image`;
+
+    // Update title
+    document.getElementById('drawing-title').textContent = name.replace('.pdf', '');
+
+    // Sync selector
+    document.getElementById('drawing-select').value = name;
+
+    // Fetch components + estimate in parallel
+    const [compData, estData] = await Promise.all([
+      fetch(`/drawing/${encodeURIComponent(name)}/components`).then(r => r.json()),
+      fetch(`/drawing/${encodeURIComponent(name)}/estimate`).then(r => r.json()),
+    ]);
+
+    components          = compData.components;
+    summary             = compData.summary;
+    pageW               = compData.page_width;
+    pageH               = compData.page_height;
+    currentDrawingType  = compData.drawing_type || 'unknown';
+
+    const drawn = components.filter(c => c.bbox !== null);
+    document.getElementById('count').textContent =
+      drawn.length > 0 ? `(${drawn.length} instances)` : '';
+
+    activeId = null;
+    buildOverlays();
+    rebuildSidebar();
+    rebuildEstimate(estData);
+  }
+
+  // ── file upload ────────────────────────────────────────────────────────────
+  document.getElementById('file-input').addEventListener('change', async e => {
+    const files = e.target.files;
+    if (!files.length) return;
+
+    const status = document.getElementById('upload-status');
+    status.className = 'busy';
+    status.textContent = `Processing ${files.length} file(s)…`;
+
+    const form = new FormData();
+    for (const f of files) form.append('files', f);
+
+    try {
+      const res  = await fetch('/upload', { method: 'POST', body: form });
+      const data = await res.json();
+
+      if (data.errors?.length) {
+        status.className = 'error';
+        status.textContent = data.errors.map(e => e.error).join(', ');
+      } else {
+        status.className = 'done';
+        status.textContent = `✓ ${data.loaded.length} loaded`;
+        setTimeout(() => { status.textContent = ''; status.className = ''; }, 3000);
+      }
+
+      // Refresh selector and switch to first newly loaded drawing
+      const sel = document.getElementById('drawing-select');
+      const allBefore = new Set([...sel.options].map(o => o.value));
+      const { drawings } = await fetch('/drawings').then(r => r.json());
+      sel.innerHTML = drawings.map(n => `<option value="${n}">${n}</option>`).join('');
+
+      if (data.loaded.length) {
+        const newName = data.loaded[0];
+        await switchDrawing(newName);
+      }
+    } catch (err) {
+      status.className = 'error';
+      status.textContent = 'Upload failed';
+    }
+
+    e.target.value = '';   // reset so same file can be re-uploaded
+  });
+
+  // ── initial load ──────────────────────────────────────────────────────────
+  loadDrawingList();
 
   // ── build overlays ────────────────────────────────────────────────────────
   function buildOverlays() {
@@ -360,15 +492,49 @@
 
   // Rebuild overlays when image finishes loading (actual size known)
   document.getElementById('drawing-img').addEventListener('load', buildOverlays);
-  window.addEventListener('resize', buildOverlays);
+  window.addEventListener('resize',  buildOverlays);
 
   // ── sidebar ───────────────────────────────────────────────────────────────
+  function rebuildSidebar() {
+    document.getElementById('comp-list').innerHTML = '';
+    buildSidebar();
+  }
+
   const COLOR = {
     KS: "#3b82f6", KR: "#10b981", FBK: "#f59e0b", "Tomrör": "#8b5cf6"
   };
 
+  const DRAWING_TYPE_LABEL = {
+    'belysning':  'Belysning (Lighting)',
+    'el-kraft':   'El-kraft (Power)',
+    'vvs':        'VVS (HVAC/Plumbing)',
+    'unknown':    'Unknown discipline',
+  };
+
   function buildSidebar() {
     const list = document.getElementById('comp-list');
+
+    // ── Empty state for non-canalisation drawings ─────────────────────────
+    if (summary.length === 0) {
+      const label = DRAWING_TYPE_LABEL[currentDrawingType] || currentDrawingType;
+      list.innerHTML = `
+        <div style="padding:24px 16px 16px;text-align:center">
+          <div style="font-size:28px;margin-bottom:10px">📄</div>
+          <div style="font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px">
+            No canalisation components
+          </div>
+          <div style="font-size:11px;color:#475569;line-height:1.6">
+            Drawing type detected:<br>
+            <strong style="color:#cbd5e1">${label}</strong>
+          </div>
+          <div style="font-size:11px;color:#334155;margin-top:10px">
+            This drawing contains no KS / KR / FBK annotations.<br>
+            The drawing image is still viewable on the left.
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     // ── Drawn + counted variants (from summary, count is a number) ────────
     const drawnSummary  = summary.filter(s => typeof s.count === 'number');
@@ -540,12 +706,28 @@
   const CONF_COLOR = c =>
     c >= 0.85 ? '#34d399' : c >= 0.65 ? '#fbbf24' : '#f87171';
 
-  fetch('/estimate')
-    .then(r => r.json())
-    .then(data => buildEstimatePanel(data));
+  function rebuildEstimate(data) {
+    buildEstimatePanel(data);
+  }
 
   function buildEstimatePanel(data) {
     const list = document.getElementById('est-list');
+    list.innerHTML = '';
+
+    if (!data.items || data.items.length === 0) {
+      const label = DRAWING_TYPE_LABEL[currentDrawingType] || currentDrawingType;
+      list.innerHTML = `
+        <div style="padding:24px 16px 16px;text-align:center">
+          <div style="font-size:11px;color:#475569;line-height:1.6">
+            No estimate available.<br>
+            <strong style="color:#cbd5e1">${label}</strong> drawing<br>
+            contains no canalisation systems.
+          </div>
+        </div>
+      `;
+      return;
+    }
+
     const t    = data.totals;
 
     // ── totals block ──────────────────────────────────────────────────────

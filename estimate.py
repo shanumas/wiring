@@ -358,12 +358,23 @@ def _confidence(item, length_source):
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
 
-def estimate():
-    data = json.loads(Path(COMPONENTS_JSON).read_text(encoding="utf-8"))
+def estimate(pdf_path=PDF_PATH, components_data=None):
+    """
+    Run all four estimation stages.
+
+    Parameters
+    ----------
+    pdf_path        : path to the PDF (needed for vector-path tracing)
+    components_data : dict returned by extract(); if None, read COMPONENTS_JSON
+    """
+    if components_data is None:
+        components_data = json.loads(Path(COMPONENTS_JSON).read_text(encoding="utf-8"))
+
+    data       = components_data
     summary    = data["summary"]
     components = data["components"]
 
-    doc  = fitz.open(PDF_PATH)
+    doc  = fitz.open(pdf_path)
     page = doc[0]
 
     segments               = _seg_endpoints(page)
@@ -488,7 +499,7 @@ def estimate():
 
 
 if __name__ == "__main__":
-    result = estimate()
+    result = estimate(PDF_PATH)
 
     print(f"\nScale: {result['totals']['scale_mm_per_pt']} mm/pt\n")
     print(f"{'System':<8} {'Orient':<12} {'W mm':<10} {'UK/ÖK':<18} {'FR':<10} "

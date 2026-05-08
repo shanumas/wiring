@@ -298,14 +298,34 @@ def extract(pdf_path=PDF_PATH):
                 entry["diameter_mm"] = c["diameter_mm"]
             summary.append(entry)
 
+    # ── Drawing type detection ────────────────────────────────────────────
+    # Scan all text to infer the discipline so the UI can show a helpful
+    # message when no canalisation components are found.
+    all_text = " ".join(
+        " ".join(s["text"] for line in b.get("lines", []) for s in line.get("spans", []))
+        for b in page.get_text("dict")["blocks"] if b.get("type") == 0
+    ).upper()
+
+    if components:
+        drawing_type = "kanalisation"
+    elif any(kw in all_text for kw in ["DALI", "STRÖMSTÄLL", "DIMMER", "SENSOR", "ARMAT", "BELYSN"]):
+        drawing_type = "belysning"
+    elif any(kw in all_text for kw in ["UTTAG", "ELCENTRAL", "SÄKERHETSBRYT", "MOTOR"]):
+        drawing_type = "el-kraft"
+    elif any(kw in all_text for kw in ["VVS", "RÖRLED", "VENTIL", "SPRINKLER"]):
+        drawing_type = "vvs"
+    else:
+        drawing_type = "unknown"
+
     w = page.rect.width
     h = page.rect.height
     doc.close()
     return {
-        "page_width":  w,
-        "page_height": h,
-        "components":  components,
-        "summary":     summary,
+        "page_width":   w,
+        "page_height":  h,
+        "drawing_type": drawing_type,
+        "components":   components,
+        "summary":      summary,
     }
 
 
