@@ -297,6 +297,61 @@
     #upload-status.busy  { color: #c8a84a; }
     #upload-status.done  { color: #4a9c6e; }
     #upload-status.error { color: #b84a4a; }
+
+    /* ── mobile ── */
+    @media (max-width: 640px) {
+      body { height: 100dvh; }
+
+      header {
+        flex-wrap: wrap;
+        padding: 8px 12px;
+        gap: 6px;
+      }
+      header h1 { font-size: 13px; order: 1; }
+      .legend   { display: none; }
+      .drawing-controls {
+        order: 2;
+        width: 100%;
+        gap: 6px;
+      }
+      #drawing-select { flex: 1; max-width: none; font-size: 13px; }
+      .upload-btn     { font-size: 13px; padding: 5px 10px; }
+      #upload-status  { min-width: 0; }
+
+      main { flex-direction: column; }
+
+      #drawing-pane {
+        flex: 0 0 42dvh;
+        padding: 8px;
+        overflow: auto;
+      }
+      #image-wrap  { display: block; width: 100%; }
+      #drawing-img { width: 100%; height: auto; }
+
+      #sidebar {
+        flex: 1 1 0;
+        width: 100%;
+        border-left: none;
+        border-top: 2px solid #1c2b4a;
+        min-height: 0;
+      }
+
+      #tooltip {
+        position: fixed;
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
+        top: auto;
+        max-width: none;
+        width: auto;
+        border-radius: 4px;
+        box-shadow: 0 -2px 16px rgba(0,0,0,0.18);
+      }
+
+      .comp-card  { padding: 10px 14px; }
+      .est-card   { padding: 10px 14px; }
+      .est-totals { margin: 8px 10px; }
+    }
   </style>
 </head>
 <body>
@@ -341,7 +396,7 @@
       <div class="sidebar-tab"        data-panel="est-panel">Estimate</div>
     </div>
     <div id="comp-panel" class="sidebar-panel active">
-      <div style="padding:6px 16px 2px;font-size:11px;color:#475569" id="count"></div>
+      <div style="padding:6px 16px 2px;font-size:11px;color:#777777" id="count"></div>
       <div id="comp-list"></div>
     </div>
     <div id="est-panel" class="sidebar-panel">
@@ -456,6 +511,8 @@
   // ── initial load ──────────────────────────────────────────────────────────
   loadDrawingList();
 
+  const isTouchDevice = () => window.matchMedia('(pointer: coarse)').matches;
+
   // ── build overlays ────────────────────────────────────────────────────────
   function buildOverlays() {
     const wrap = document.getElementById('image-wrap');
@@ -485,7 +542,14 @@
       div.addEventListener('mouseenter', e => showTooltip(e, c));
       div.addEventListener('mousemove',  e => moveTooltip(e));
       div.addEventListener('mouseleave', hideTooltip);
-      div.addEventListener('click', () => selectComponent(c.id));
+      div.addEventListener('click', e => {
+        selectComponent(c.id);
+        if (isTouchDevice()) {
+          showTooltip(e, c);
+          clearTimeout(tt._hideTimer);
+          tt._hideTimer = setTimeout(hideTooltip, 3000);
+        }
+      });
       wrap.appendChild(div);
     });
   }
@@ -520,16 +584,16 @@
       list.innerHTML = `
         <div style="padding:24px 16px 16px;text-align:center">
           <div style="font-size:28px;margin-bottom:10px">📄</div>
-          <div style="font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px">
+          <div style="font-size:13px;font-weight:600;color:#666666;margin-bottom:6px">
             No canalisation components
           </div>
-          <div style="font-size:11px;color:#475569;line-height:1.6">
+          <div style="font-size:11px;color:#555555;line-height:1.6">
             Drawing type detected:<br>
-            <strong style="color:#cbd5e1">${label}</strong>
+            <strong style="color:#1a1a1a">${label}</strong>
           </div>
-          <div style="font-size:11px;color:#334155;margin-top:10px">
+          <div style="font-size:11px;color:#888888;margin-top:10px">
             This drawing contains no KS / KR / FBK annotations.<br>
-            The drawing image is still viewable on the left.
+            The drawing image is still viewable above.
           </div>
         </div>
       `;
@@ -579,7 +643,7 @@
     // ── Legend / notes entries ────────────────────────────────────────────
     if (legendSummary.length) {
       const sep = document.createElement('div');
-      sep.style.cssText = 'padding:8px 16px 4px;font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #334155;margin-top:4px';
+      sep.style.cssText = 'padding:8px 16px 4px;font-size:10px;font-weight:600;color:#777777;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #d4d4d4;margin-top:4px';
       sep.textContent = 'From legend / notes';
       list.appendChild(sep);
 
@@ -719,9 +783,9 @@
       const label = DRAWING_TYPE_LABEL[currentDrawingType] || currentDrawingType;
       list.innerHTML = `
         <div style="padding:24px 16px 16px;text-align:center">
-          <div style="font-size:11px;color:#475569;line-height:1.6">
+          <div style="font-size:11px;color:#555555;line-height:1.6">
             No estimate available.<br>
-            <strong style="color:#cbd5e1">${label}</strong> drawing<br>
+            <strong style="color:#1a1a1a">${label}</strong> drawing<br>
             contains no canalisation systems.
           </div>
         </div>
