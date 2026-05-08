@@ -37,6 +37,211 @@ EI_PAT       = re.compile(r'EI\s*30-C',    re.IGNORECASE)
 # (observed boundary: drawn components end around y=1931, legend starts ~y=2072)
 LEGEND_Y = 2050
 
+# ── Generic symbol extractor (belysning / kraft / vvs drawings) ───────────────
+
+# Description text typically starts with these patterns
+_GEN_MULTI = re.compile(
+    r'\b([A-ZÅÄÖ0-9][A-ZÅÄÖ0-9/\-]{0,5})\s+(?=\d+[-–]|[A-ZÅÄÖ]{4,})'
+)
+_GEN_CODE = re.compile(r'^[A-ZÅÄÖ0-9][A-ZÅÄÖ0-9/\-]{0,7}$')
+
+# These tokens are NEVER component codes
+_GEN_NOT_CODE = frozenset([
+    'SE', 'EJ', 'MED', 'OCH', 'FÖR', 'AV', 'PÅ', 'EN', 'OM',
+    'HUS', 'TRH', 'ELC', 'WC', 'VIA', 'DEL',
+    'WAGO', 'NIKO', 'ELIT', 'MONT', 'LEV', 'IP44',
+    'EI', 'HOS', 'BLÅ', 'VID', 'TYP', 'TILL',
+    'SNABB', 'DALI', 'EXXACT', 'RUTAB', 'WINSTA',
+    'OVAN', 'SAMT', 'VALBAR', 'SYNLIG',
+])
+
+_GEN_LEG_SKIP = re.compile(
+    r'FÖRESKRIFTER|HÄNVISNINGAR|FÖRFRÅGNINGS|RELATIONSRIT|BYGGHANDLING|'
+    r'BYGGLOVSRIT|UTREDNINGS|FÖRSLAGSHAND|I STOCKHOLM|SKOLFASTIG|'
+    r'RITAD|URSPRUNGLIG|HANDLÄGGARE|ANSVARIG|ÄNDRINGEN|'
+    r'KV\. LÄROBOKEN|FASTIGHETSNUMMER|DÄR EJ ANNAT|DRIVDON FÖR|'
+    r'TÄNDNINGAR|SE ARMATURFÖRTECKNING|FÖRKLARINGAR|KONNEKTIONSLINJE|'
+    r'SE TEKNISK|SKALA',
+    re.IGNORECASE
+)
+_GEN_DRAW_SKIP = re.compile(
+    r'^(?:EI\s*\d|F\s*15|KONNEKTIONSLINJE|\+\d+|HUS\s+[A-ZÅÄÖ]|'
+    r'A\d{3}|TRH\.|FÖRFRÅGNINGS|RELATIONSRIT|BYGGHANDLING|BYGGLOVS|'
+    r'UTREDNINGS|FÖRSLAGSHAND|I STOCKHOLM|SKOLFASTIG|RITAD|URSPRUNGLIG|'
+    r'HANDLÄGG|ANSVARIG|ÄNDRINGEN|KV\.|FASTIGHETSNUMMER)',
+    re.IGNORECASE
+)
+_GEN_TOK = re.compile(r'[A-ZÅÄÖ0-9][A-ZÅÄÖ0-9/\-]*')
+
+_GEN_PALETTE = [
+    "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6",
+    "#ef4444", "#06b6d4", "#f97316", "#84cc16",
+    "#ec4899", "#14b8a6", "#a855f7", "#22c55e",
+]
+
+
+def _gen_color(code):
+    return _GEN_PALETTE[sum(ord(c) for c in code) % len(_GEN_PALETTE)]
+
+
+def _parse_legend_codes(page, legend_y):
+    """
+    Parse the FÖRKLARINGAR section into {code: description_snippet}.
+
+    Strategy:
+    - Small blocks (h < 30): all short uppercase tokens are codes
+      (pure code blocks like "DA", "NS NB", "D1 D2 D3")
+    - Larger blocks (h >= 30): two passes
+        1. Single-prefix regex: first 1-5 char token at block start
+           (e.g. "4 4-VÄGSUTTAG" → code "4", "3N/16A 3-FAS" → code "3N/16A")
+        2. Multi-code regex: find all CODE + description-trigger pairs
+           (e.g. "H 2-VÄGSUTTAG ... HB HÖRNBOX ..." → H, HB)
+           — but skip pure-digit captures to avoid "5" from "5G1,5 5-POL"
+    """
+    codes = {}
+
+    for b in page.get_text("dict")["blocks"]:
+        if b.get("type") != 0:
+            continue
+        bb = b["bbox"]
+        if bb[1] < legend_y:
+            continue
+        spans = [s["text"].strip()
+                 for ln in b.get("lines", [])
+                 for s in ln.get("spans", [])
+                 if s["text"].strip()]
+        full = " ".join(spans)
+        if not full or _GEN_LEG_SKIP.search(full):
+            continue
+
+        h = bb[3] - bb[1]
+
+        if h < 30:
+            # Pure code block
+            for tok in full.split():
+                tok = tok.strip('.,;:')
+                if (tok and _GEN_CODE.match(tok)
+                        and tok not in _GEN_NOT_CODE
+                        and not tok.isdigit()):   # skip bare digits (e.g. "0" from "H 0 A")
+                    codes.setdefault(tok, tok)
+        else:
+            # Single prefix: first code token at block start
+            m = re.match(r'^([A-ZÅÄÖ0-9][A-ZÅÄÖ0-9/\-]{0,4})\s+(.+)', full)
+            if m:
+                tok, rest = m.group(1), m.group(2).strip()
+                if (_GEN_CODE.match(tok)
+                        and tok not in _GEN_NOT_CODE
+                        and len(tok) <= 5):
+                    codes.setdefault(tok, rest[:60])
+
+            # Multi-code: CODE immediately before "digit-" or "4+ uppercase letters"
+            # Use finditer so we can slice out the description per code
+            for mc in _GEN_MULTI.finditer(full):
+                tok = mc.group(1)
+                if (tok and _GEN_CODE.match(tok)
+                        and tok not in _GEN_NOT_CODE
+                        and not tok.isdigit()):   # skip bare digits from mid-description
+                    # Description starts right after code+space (lookahead position)
+                    desc_text = full[mc.end():]
+                    # Trim at next code start — but only if it isn't position 0
+                    # (position 0 means the description itself starts with a number
+                    # pattern like "1-VÄGSUTTAG", which we must NOT cut away)
+                    nxt = _GEN_MULTI.search(desc_text)
+                    if nxt and nxt.start() > 0:
+                        desc = desc_text[:nxt.start()].strip()
+                    else:
+                        desc = desc_text.strip()
+                    codes.setdefault(tok, desc[:60])
+
+    return codes
+
+
+def _extract_generic(page, legend_codes, legend_y, ei_bboxes):
+    """
+    Count instances of each legend code found in the drawing body.
+    Returns (components, summary) in the same schema as the kanalisation extractor.
+    """
+    # {code: [(bbox, fire_rating), ...]}
+    code_instances = defaultdict(list)
+
+    for b in page.get_text("dict")["blocks"]:
+        if b.get("type") != 0:
+            continue
+        bb = b["bbox"]
+        if bb[1] >= legend_y:
+            continue
+        spans = [s["text"].strip()
+                 for ln in b.get("lines", [])
+                 for s in ln.get("spans", [])
+                 if s["text"].strip()]
+        full = " ".join(spans)
+        if not full or _GEN_DRAW_SKIP.search(full):
+            continue
+
+        fire = None
+        for ei in ei_bboxes:
+            if x_bands_overlap(bb, ei):
+                fire = "EI 30-C"
+                break
+
+        for tok in _GEN_TOK.findall(full):
+            if tok in legend_codes:
+                code_instances[tok].append((bb, fire))
+
+    # Build component list (one entry per instance)
+    components = []
+    for code in sorted(code_instances):
+        desc = legend_codes[code]
+        # Clean up description: strip leading code if present
+        if desc.startswith(code + " "):
+            desc = desc[len(code):].strip()
+        if desc == code:
+            desc = code
+        color = _gen_color(code)
+        for i, (bb, fire) in enumerate(code_instances[code]):
+            components.append({
+                "id":          f"GEN_{code}_{i}",
+                "type":        code,
+                "name":        desc[:50] or code,
+                "en_name":     "",
+                "color":       color,
+                "size":        None,
+                "ok_height":   None,
+                "uk_height":   None,
+                "is_vertical": False,
+                "fire_rating": fire,
+                "label":       code,
+                "bbox":        [round(x, 2) for x in bb],
+                "occurrences": 1,
+            })
+
+    # Build summary
+    sig_counts = defaultdict(int)
+    for code, instances in code_instances.items():
+        for _, fire in instances:
+            sig_counts[(code, fire)] += 1
+
+    summary = []
+    for (code, fire), count in sorted(sig_counts.items(),
+                                       key=lambda x: (-x[1], x[0][0])):
+        desc = legend_codes[code]
+        if desc.startswith(code + " "):
+            desc = desc[len(code):].strip()
+        if desc == code:
+            desc = code
+        summary.append({
+            "system":       code,
+            "name":         desc[:50] or code,
+            "orientation":  "horizontal",
+            "width_mm":     None,
+            "ok_ofg_mm":    None,
+            "uk_ofg_mm":    None,
+            "fire_rating":  fire,
+            "count":        count,
+        })
+
+    return components, summary
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -239,64 +444,74 @@ def extract(pdf_path=PDF_PATH):
             "occurrences": "present",
         })
 
-    # ── Aggregated summary (for cost estimation) ──────────────────────────
-    sig_counts = defaultdict(int)
-    sig_proto  = {}
-    for c in components:
-        if c["occurrences"] in (1,):
-            sig = (c["type"], c.get("size"), c.get("ok_height"),
-                   c.get("uk_height"), c.get("is_vertical"), c.get("fire_rating"))
-            sig_counts[sig] += 1
-            if sig not in sig_proto:
-                sig_proto[sig] = c
+    # ── Generic symbol extraction for non-canalisation drawings ───────────
+    # If no KS/KR/FBK/Tomrör components were found, try to extract generic
+    # electrical symbols defined in the FÖRKLARINGAR (legend) section.
+    if not components:
+        leg_codes = _parse_legend_codes(page, LEGEND_Y)
+        if leg_codes:
+            components, summary = _extract_generic(page, leg_codes, LEGEND_Y, ei_bboxes)
+        else:
+            summary = []
+    else:
+        # ── Aggregated summary (for cost estimation) ──────────────────────
+        sig_counts = defaultdict(int)
+        sig_proto  = {}
+        for c in components:
+            if c["occurrences"] in (1,):
+                sig = (c["type"], c.get("size"), c.get("ok_height"),
+                       c.get("uk_height"), c.get("is_vertical"), c.get("fire_rating"))
+                sig_counts[sig] += 1
+                if sig not in sig_proto:
+                    sig_proto[sig] = c
 
-    summary = []
-    for sig, count in sig_counts.items():
-        p      = sig_proto[sig]
-        is_vert = p.get("is_vertical", False)
-        raw_size = p.get("size")
-        summary.append({
-            "system":       p["type"],
-            "name":         p["name"],
-            "orientation":  "vertical" if is_vert else "horizontal",
-            "width_mm":     int(raw_size) if raw_size else "per_drawing",
-            "ok_ofg_mm":    int(p["ok_height"]) if p.get("ok_height") else None,
-            "uk_ofg_mm":    int(p["uk_height"]) if p.get("uk_height") else None,
-            "fire_rating":  p.get("fire_rating"),
-            "count":        count,
-        })
-
-    # Sort: by system code, then fire-rating (rated first), then height signature
-    summary.sort(key=lambda s: (
-        s["system"],
-        0 if s["fire_rating"] else 1,
-        s.get("ok_ofg_mm") or 0,
-        s.get("uk_ofg_mm") or 0,
-    ))
-
-    # Add legend-only types (vertical systems, Tomrör) to summary
-    for c in components:
-        if c.get("occurrences") in ("legend", "present"):
-            raw_size = c.get("size")
-            is_vert  = c.get("is_vertical", False)
-            ok_val   = int(c["ok_height"]) if c.get("ok_height") else None
-            entry = {
-                "system":       c["type"],
-                "name":         c["name"],
+        summary = []
+        for sig, count in sig_counts.items():
+            p       = sig_proto[sig]
+            is_vert = p.get("is_vertical", False)
+            raw_size = p.get("size")
+            summary.append({
+                "system":       p["type"],
+                "name":         p["name"],
                 "orientation":  "vertical" if is_vert else "horizontal",
-                "width_mm":     int(raw_size) if raw_size and raw_size != "per_drawing"
-                                else ("per_drawing" if is_vert else None),
-                "ok_ofg_mm":    ok_val,
-                "uk_ofg_mm":    int(c["uk_height"]) if c.get("uk_height") else None,
-                "fire_rating":  c.get("fire_rating"),
-                "count":        c["occurrences"],   # "legend" or "present"
-            }
-            # Alias: vertical reference height has a dedicated key for clarity
-            if is_vert and ok_val is not None:
-                entry["vertical_reference_height_mm"] = ok_val
-            if c.get("diameter_mm"):
-                entry["diameter_mm"] = c["diameter_mm"]
-            summary.append(entry)
+                "width_mm":     int(raw_size) if raw_size else "per_drawing",
+                "ok_ofg_mm":    int(p["ok_height"]) if p.get("ok_height") else None,
+                "uk_ofg_mm":    int(p["uk_height"]) if p.get("uk_height") else None,
+                "fire_rating":  p.get("fire_rating"),
+                "count":        count,
+            })
+
+        # Sort: by system code, then fire-rating (rated first), then height signature
+        summary.sort(key=lambda s: (
+            s["system"],
+            0 if s["fire_rating"] else 1,
+            s.get("ok_ofg_mm") or 0,
+            s.get("uk_ofg_mm") or 0,
+        ))
+
+        # Add legend-only types (vertical systems, Tomrör) to summary
+        for c in components:
+            if c.get("occurrences") in ("legend", "present"):
+                raw_size = c.get("size")
+                is_vert  = c.get("is_vertical", False)
+                ok_val   = int(c["ok_height"]) if c.get("ok_height") else None
+                entry = {
+                    "system":       c["type"],
+                    "name":         c["name"],
+                    "orientation":  "vertical" if is_vert else "horizontal",
+                    "width_mm":     int(raw_size) if raw_size and raw_size != "per_drawing"
+                                    else ("per_drawing" if is_vert else None),
+                    "ok_ofg_mm":    ok_val,
+                    "uk_ofg_mm":    int(c["uk_height"]) if c.get("uk_height") else None,
+                    "fire_rating":  c.get("fire_rating"),
+                    "count":        c["occurrences"],   # "legend" or "present"
+                }
+                # Alias: vertical reference height has a dedicated key for clarity
+                if is_vert and ok_val is not None:
+                    entry["vertical_reference_height_mm"] = ok_val
+                if c.get("diameter_mm"):
+                    entry["diameter_mm"] = c["diameter_mm"]
+                summary.append(entry)
 
     # ── Drawing type detection ────────────────────────────────────────────
     # Scan all text to infer the discipline so the UI can show a helpful
@@ -306,9 +521,13 @@ def extract(pdf_path=PDF_PATH):
         for b in page.get_text("dict")["blocks"] if b.get("type") == 0
     ).upper()
 
-    if components:
+    if any(c["type"] in ("KS", "KR", "FBK", "Tomrör") for c in components):
         drawing_type = "kanalisation"
-    elif any(kw in all_text for kw in ["DALI", "STRÖMSTÄLL", "DIMMER", "SENSOR", "ARMAT", "BELYSN"]):
+    elif re.search(r'\bKRAFT\b', all_text):          # "KRAFT" title, not "KRAFTRITNING"
+        drawing_type = "el-kraft"
+    elif re.search(r'\bBELYSNING\b', all_text):      # standalone word, not "NÖDBELYSNING..."
+        drawing_type = "belysning"
+    elif any(kw in all_text for kw in ["DALI", "STRÖMSTÄLL", "DIMMER", "SENSOR", "ARMATUR"]):
         drawing_type = "belysning"
     elif any(kw in all_text for kw in ["UTTAG", "ELCENTRAL", "SÄKERHETSBRYT", "MOTOR"]):
         drawing_type = "el-kraft"

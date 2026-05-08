@@ -667,10 +667,11 @@
       ? `<div class="tt-row"><span>Orientation</span><strong>Vertical</strong></div>`
       : '';
 
+    const sizeStr = c.size ? `${c.size} mm` : '';
     tt.innerHTML = `
-      <div class="tt-type" style="color:${c.color}">${c.name}</div>
-      <div class="tt-row"><span>Code</span><strong>${c.type} ${c.size || ''}${c.size ? ' mm' : ''}</strong></div>
-      <div class="tt-row"><span>English</span><strong>${c.en_name}</strong></div>
+      <div class="tt-type" style="color:${c.color}">${c.name || c.type}</div>
+      <div class="tt-row"><span>Code</span><strong>${c.type}${sizeStr ? ' ' + sizeStr : ''}</strong></div>
+      ${c.en_name ? `<div class="tt-row"><span>English</span><strong>${c.en_name}</strong></div>` : ''}
       ${heights.join('')}
       ${fireLine}${vertLine}
     `;
@@ -775,7 +776,7 @@
         <div class="est-title">
           <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
             <span class="comp-card-badge" style="background:${c}22;color:${c}">${item.system}</span>
-            ${item.width_mm === 'per_drawing' ? 'per drawing' : item.width_mm + ' mm'}
+            ${item.width_mm === 'per_drawing' ? 'per drawing' : item.width_mm ? item.width_mm + ' mm' : ''}
             ${fr}${v}
             <span style="color:#64748b;font-size:11px">×${item.count}</span>
           </div>

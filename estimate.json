@@ -1,9 +1,345 @@
 {
-  "items": [],
+  "items": [
+    {
+      "system": "4",
+      "name": "4-VÄGSUTTAG, 300 ÖFG",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 20,
+      "horizontal_length_mm": 79502,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 79502,
+      "total_length_m": 79.5,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 39751,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "FBA",
+      "name": "2-VÄGSUTTAG I FBK",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 6,
+      "horizontal_length_mm": 1930,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 1930,
+      "total_length_m": 1.93,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 965,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "NS",
+      "name": "NS",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 4,
+      "horizontal_length_mm": 13471,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 13471,
+      "total_length_m": 13.47,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 6735,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "KO",
+      "name": "1-VÄGSUTTAG",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 3,
+      "horizontal_length_mm": 17944,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 17944,
+      "total_length_m": 17.94,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 8972,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "P",
+      "name": "2-VÄGSUTTAG FÖR PROJEKTOR, OVAN UNDERTAK",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 3,
+      "horizontal_length_mm": 24167,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 24167,
+      "total_length_m": 24.17,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 12084,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "DA",
+      "name": "DA",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 2,
+      "horizontal_length_mm": 31886,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 31886,
+      "total_length_m": 31.89,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 15943,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "NB",
+      "name": "NB",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 2,
+      "horizontal_length_mm": 13471,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 13471,
+      "total_length_m": 13.47,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 6735,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "S",
+      "name": "1-VÄGS STÄDUTTAG, 900 ÖFG",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 2,
+      "horizontal_length_mm": 3981,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 3981,
+      "total_length_m": 3.98,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 1991,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "3N/16A",
+      "name": "3-FAS UTTAG, 16A, 1500 ÖFG",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": "EI 30-C",
+      "count": 1,
+      "horizontal_length_mm": 1589,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 1589,
+      "total_length_m": 1.59,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 795,
+      "confidence": 0.55,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "B",
+      "name": "B",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 1,
+      "horizontal_length_mm": 15679,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 15679,
+      "total_length_m": 15.68,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 7840,
+      "confidence": 0.45,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "D",
+      "name": "2-VÄGS UTTAG I ELNISCH, 1200 ÖFG",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 1,
+      "horizontal_length_mm": 1589,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 1589,
+      "total_length_m": 1.59,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 795,
+      "confidence": 0.45,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "HL",
+      "name": "SE HUVUDLEDNINGSSCHEMA",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 1,
+      "horizontal_length_mm": 15679,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 15679,
+      "total_length_m": 15.68,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 7840,
+      "confidence": 0.45,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "S",
+      "name": "1-VÄGS STÄDUTTAG, 900 ÖFG",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": "EI 30-C",
+      "count": 1,
+      "horizontal_length_mm": 15187,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 15187,
+      "total_length_m": 15.19,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 7594,
+      "confidence": 0.55,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    }
+  ],
   "totals": {
-    "total_cost_sek": 0,
-    "total_length_m": 0,
+    "total_cost_sek": 118040,
+    "total_length_m": 236.08,
     "scale_mm_per_pt": 17.6389,
-    "by_system": {}
+    "by_system": {
+      "4": {
+        "total_length_m": 79.5,
+        "total_cost_sek": 39751
+      },
+      "FBA": {
+        "total_length_m": 1.93,
+        "total_cost_sek": 965
+      },
+      "NS": {
+        "total_length_m": 13.47,
+        "total_cost_sek": 6735
+      },
+      "KO": {
+        "total_length_m": 17.94,
+        "total_cost_sek": 8972
+      },
+      "P": {
+        "total_length_m": 24.17,
+        "total_cost_sek": 12084
+      },
+      "DA": {
+        "total_length_m": 31.89,
+        "total_cost_sek": 15943
+      },
+      "NB": {
+        "total_length_m": 13.47,
+        "total_cost_sek": 6735
+      },
+      "S": {
+        "total_length_m": 19.17,
+        "total_cost_sek": 9585
+      },
+      "3N/16A": {
+        "total_length_m": 1.59,
+        "total_cost_sek": 795
+      },
+      "B": {
+        "total_length_m": 15.68,
+        "total_cost_sek": 7840
+      },
+      "D": {
+        "total_length_m": 1.59,
+        "total_cost_sek": 795
+      },
+      "HL": {
+        "total_length_m": 15.68,
+        "total_cost_sek": 7840
+      }
+    }
   }
 }
