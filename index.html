@@ -199,6 +199,9 @@
     <div class="legend-item">
       <div class="legend-dot" style="background:#f59e0b"></div>FBK — Window Sill Channel
     </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#8b5cf6"></div>Tomrör — Conduit
+    </div>
   </div>
 </header>
 
@@ -230,7 +233,9 @@
       components = data.components;
       pageW = data.page_width;
       pageH = data.page_height;
-      document.getElementById('count').textContent = `(${components.length})`;
+      // Only drawn instances (bbox !== null) get overlays
+      const drawn = components.filter(c => c.bbox !== null);
+      document.getElementById('count').textContent = `(${drawn.length} drawn)`;
       buildOverlays();
       buildSidebar();
     });
@@ -246,7 +251,7 @@
     const scaleX = img.clientWidth  / pageW;
     const scaleY = img.clientHeight / pageH;
 
-    components.forEach(c => {
+    components.filter(c => c.bbox !== null).forEach(c => {
       const [x0, y0, x1, y1] = c.bbox;
       const div = document.createElement('div');
       div.className = 'comp-overlay';
@@ -276,7 +281,12 @@
   // ── sidebar ───────────────────────────────────────────────────────────────
   function buildSidebar() {
     const list = document.getElementById('comp-list');
-    components.forEach(c => {
+
+    const drawn  = components.filter(c => c.bbox !== null);
+    const legend = components.filter(c => c.bbox === null);
+
+    // Drawn instances
+    drawn.forEach(c => {
       const card = document.createElement('div');
       card.className = 'comp-card';
       card.dataset.id = c.id;
@@ -285,12 +295,16 @@
       const heights = [];
       if (c.ok_height) heights.push(`ÖK ${c.ok_height} mm ÖFG`);
       if (c.uk_height) heights.push(`UK ${c.uk_height} mm ÖFG`);
+      const fireBadge = c.fire_rating
+        ? `<span class="comp-card-badge" style="background:#ef444422;color:#ef4444;margin-left:4px">${c.fire_rating}</span>`
+        : '';
+      const vertTag = c.is_vertical ? ' <em style="color:#94a3b8;font-size:10px">VERT</em>' : '';
 
       card.innerHTML = `
         <div class="comp-card-title">
           <span class="comp-card-badge"
                 style="background:${c.color}22;color:${c.color}">${c.type}</span>
-          ${c.name} ${c.size ? c.size + ' mm' : ''}
+          ${c.name} ${c.size ? c.size + ' mm' : ''}${vertTag}${fireBadge}
         </div>
         <div class="comp-card-sub">${heights.join(' · ') || 'No height data'}</div>
       `;
@@ -298,6 +312,38 @@
       card.addEventListener('click', () => selectComponent(c.id));
       list.appendChild(card);
     });
+
+    // Legend / notes section
+    if (legend.length) {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'padding:8px 16px 4px;font-size:10px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #334155;margin-top:4px';
+      sep.textContent = 'From legend / notes';
+      list.appendChild(sep);
+
+      legend.forEach(c => {
+        const card = document.createElement('div');
+        card.className = 'comp-card';
+        card.dataset.id = c.id;
+        card.style.setProperty('--c', c.color);
+        card.style.opacity = '0.75';
+
+        const heights = [];
+        if (c.ok_height) heights.push(`ÖK ${c.ok_height} mm ÖFG`);
+        if (c.uk_height) heights.push(`UK ${c.uk_height} mm ÖFG`);
+        const diam = c.diameter_mm ? `Ø${c.diameter_mm} mm` : '';
+        const sub = [diam, heights.join(' · ')].filter(Boolean).join('  ') || 'Size per drawing';
+
+        card.innerHTML = `
+          <div class="comp-card-title">
+            <span class="comp-card-badge"
+                  style="background:${c.color}22;color:${c.color}">${c.type}</span>
+            ${c.name}
+          </div>
+          <div class="comp-card-sub">${sub}</div>
+        `;
+        list.appendChild(card);
+      });
+    }
   }
 
   // ── selection ─────────────────────────────────────────────────────────────
@@ -326,11 +372,19 @@
     if (c.ok_height) heights.push(`<div class="tt-row"><span>ÖK (top)</span><strong>${c.ok_height} mm ÖFG</strong></div>`);
     if (c.uk_height) heights.push(`<div class="tt-row"><span>UK (bottom)</span><strong>${c.uk_height} mm ÖFG</strong></div>`);
 
+    const fireLine = c.fire_rating
+      ? `<div class="tt-row"><span>Fire rating</span><strong style="color:#ef4444">${c.fire_rating}</strong></div>`
+      : '';
+    const vertLine = c.is_vertical
+      ? `<div class="tt-row"><span>Orientation</span><strong>Vertical</strong></div>`
+      : '';
+
     tt.innerHTML = `
       <div class="tt-type" style="color:${c.color}">${c.name}</div>
       <div class="tt-row"><span>Code</span><strong>${c.type} ${c.size || ''}${c.size ? ' mm' : ''}</strong></div>
       <div class="tt-row"><span>English</span><strong>${c.en_name}</strong></div>
       ${heights.join('')}
+      ${fireLine}${vertLine}
     `;
     tt.style.display = 'block';
     moveTooltip(e);
