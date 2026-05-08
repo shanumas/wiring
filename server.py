@@ -19,6 +19,7 @@ from estimate import estimate
 
 app    = FastAPI()
 PDF_DIR = Path("pdf")
+PDF_DIR.mkdir(exist_ok=True)
 
 # ── Per-drawing in-memory cache ────────────────────────────────────────────────
 # { filename: {"png": bytes, "components": dict, "estimate": dict} }
