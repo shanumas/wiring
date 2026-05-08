@@ -9,8 +9,8 @@
 
     body {
       font-family: system-ui, -apple-system, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
+      background: #ebebeb;
+      color: #1a1a1a;
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -21,8 +21,8 @@
     header {
       flex: 0 0 auto;
       padding: 10px 20px;
-      background: #1e293b;
-      border-bottom: 1px solid #334155;
+      background: #1c2b4a;
+      border-bottom: 1px solid #14213a;
       display: flex;
       align-items: center;
       gap: 16px;
@@ -30,12 +30,12 @@
     header h1 {
       font-size: 15px;
       font-weight: 600;
-      color: #f1f5f9;
+      color: #ffffff;
       letter-spacing: 0.3px;
     }
     header span {
       font-size: 12px;
-      color: #64748b;
+      color: #8a9bbf;
     }
     .legend {
       display: flex;
@@ -47,7 +47,7 @@
       align-items: center;
       gap: 6px;
       font-size: 12px;
-      color: #94a3b8;
+      color: #c0cbdf;
     }
     .legend-dot {
       width: 10px; height: 10px;
@@ -66,7 +66,7 @@
       flex: 1 1 0;
       overflow: auto;
       padding: 16px;
-      background: #0f172a;
+      background: #ebebeb;
     }
 
     #image-wrap {
@@ -79,21 +79,21 @@
       display: block;
       max-width: 100%;
       height: auto;
-      border-radius: 4px;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+      border-radius: 2px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.18);
     }
 
     /* ── component overlays ── */
     .comp-overlay {
       position: absolute;
       border: 2px solid transparent;
-      border-radius: 3px;
+      border-radius: 2px;
       cursor: pointer;
       transition: background 0.15s, border-color 0.15s;
     }
     .comp-overlay:hover,
     .comp-overlay.active {
-      background: rgba(255,255,255,0.15) !important;
+      background: rgba(0,0,0,0.08) !important;
       border-color: currentColor !important;
     }
 
@@ -101,14 +101,14 @@
     #tooltip {
       position: fixed;
       display: none;
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 8px;
+      background: #ffffff;
+      border: 1px solid #c8c8c8;
+      border-radius: 3px;
       padding: 10px 14px;
       font-size: 12px;
       line-height: 1.6;
       max-width: 240px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
       pointer-events: none;
       z-index: 1000;
     }
@@ -121,16 +121,16 @@
       display: flex;
       justify-content: space-between;
       gap: 16px;
-      color: #94a3b8;
+      color: #666666;
     }
-    #tooltip .tt-row strong { color: #e2e8f0; }
+    #tooltip .tt-row strong { color: #1a1a1a; }
 
     /* ── sidebar ── */
     /* ── sidebar tabs ── */
     .sidebar-tabs {
       flex: 0 0 auto;
       display: flex;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid #d4d4d4;
     }
     .sidebar-tab {
       flex: 1;
@@ -138,7 +138,7 @@
       font-size: 11px;
       font-weight: 600;
       text-align: center;
-      color: #64748b;
+      color: #888888;
       cursor: pointer;
       letter-spacing: 0.5px;
       text-transform: uppercase;
@@ -146,8 +146,8 @@
       transition: color 0.1s, border-color 0.1s;
     }
     .sidebar-tab.active {
-      color: #e2e8f0;
-      border-bottom-color: #3b82f6;
+      color: #1c2b4a;
+      border-bottom-color: #1c2b4a;
     }
     .sidebar-panel { display: none; flex: 1 1 0; overflow-y: auto; padding: 8px 0; }
     .sidebar-panel.active { display: block; }
@@ -160,49 +160,49 @@
     .est-title {
       font-size: 12px;
       font-weight: 600;
-      color: #e2e8f0;
+      color: #1a1a1a;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
     .est-sub {
       font-size: 11px;
-      color: #64748b;
+      color: #666666;
       margin-top: 3px;
       line-height: 1.5;
     }
     .est-cost {
       font-size: 13px;
       font-weight: 700;
-      color: #34d399;
+      color: #1a5c3a;
     }
     .est-conf {
       font-size: 10px;
       padding: 1px 5px;
-      border-radius: 3px;
+      border-radius: 2px;
       font-weight: 600;
     }
     .est-totals {
       margin: 8px 12px;
       padding: 10px 12px;
-      background: #0f172a;
-      border-radius: 6px;
-      border: 1px solid #334155;
+      background: #f0f0f0;
+      border-radius: 2px;
+      border: 1px solid #d4d4d4;
       font-size: 12px;
     }
     .est-totals .tot-row {
       display: flex;
       justify-content: space-between;
       padding: 2px 0;
-      color: #94a3b8;
+      color: #555555;
     }
-    .est-totals .tot-row strong { color: #e2e8f0; }
-    .est-totals .grand { border-top: 1px solid #334155; margin-top: 6px; padding-top: 6px; color: #f1f5f9; font-weight: 700; }
+    .est-totals .tot-row strong { color: #1a1a1a; }
+    .est-totals .grand { border-top: 1px solid #c8c8c8; margin-top: 6px; padding-top: 6px; color: #1a1a1a; font-weight: 700; }
 
     #sidebar {
       flex: 0 0 280px;
-      background: #1e293b;
-      border-left: 1px solid #334155;
+      background: #ffffff;
+      border-left: 1px solid #d4d4d4;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -212,10 +212,10 @@
       padding: 12px 16px;
       font-size: 12px;
       font-weight: 600;
-      color: #64748b;
+      color: #888888;
       text-transform: uppercase;
       letter-spacing: 0.8px;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid #d4d4d4;
     }
     #comp-list {
       flex: 1 1 0;
@@ -230,7 +230,7 @@
     }
     .comp-card:hover,
     .comp-card.active {
-      background: #0f172a;
+      background: #f4f4f4;
     }
     .comp-card.active {
       border-left-color: var(--c);
@@ -238,7 +238,7 @@
     .comp-card-title {
       font-size: 13px;
       font-weight: 600;
-      color: #e2e8f0;
+      color: #1a1a1a;
       display: flex;
       align-items: center;
       gap: 7px;
@@ -246,13 +246,13 @@
     .comp-card-badge {
       font-size: 10px;
       padding: 1px 6px;
-      border-radius: 3px;
+      border-radius: 2px;
       font-weight: 700;
       letter-spacing: 0.5px;
     }
     .comp-card-sub {
       font-size: 11px;
-      color: #64748b;
+      color: #777777;
       margin-top: 2px;
     }
     /* ── drawing controls ── */
@@ -263,10 +263,10 @@
       flex-shrink: 0;
     }
     #drawing-select {
-      background: #0f172a;
-      color: #e2e8f0;
-      border: 1px solid #334155;
-      border-radius: 5px;
+      background: #14213a;
+      color: #e8edf5;
+      border: 1px solid #2e4070;
+      border-radius: 3px;
       padding: 4px 8px;
       font-size: 12px;
       cursor: pointer;
@@ -277,26 +277,26 @@
       align-items: center;
       gap: 5px;
       padding: 4px 10px;
-      background: #1e3a5f;
-      border: 1px solid #3b82f6;
-      border-radius: 5px;
-      color: #93c5fd;
+      background: #2e4470;
+      border: 1px solid #4a6296;
+      border-radius: 3px;
+      color: #c8d4ec;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
       transition: background 0.15s;
     }
-    .upload-btn:hover { background: #1e40af; }
+    .upload-btn:hover { background: #3a5490; }
     .upload-btn input[type=file] { display: none; }
     #upload-status {
       font-size: 11px;
-      color: #64748b;
+      color: #8a9bbf;
       min-width: 80px;
     }
-    #upload-status.busy  { color: #fbbf24; }
-    #upload-status.done  { color: #34d399; }
-    #upload-status.error { color: #f87171; }
+    #upload-status.busy  { color: #c8a84a; }
+    #upload-status.done  { color: #4a9c6e; }
+    #upload-status.error { color: #b84a4a; }
   </style>
 </head>
 <body>
@@ -313,16 +313,16 @@
   </div>
   <div class="legend">
     <div class="legend-item">
-      <div class="legend-dot" style="background:#3b82f6"></div>KS
+      <div class="legend-dot" style="background:#1e4d8c"></div>KS
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background:#10b981"></div>KR
+      <div class="legend-dot" style="background:#1a6b45"></div>KR
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background:#f59e0b"></div>FBK
+      <div class="legend-dot" style="background:#8a6200"></div>FBK
     </div>
     <div class="legend-item">
-      <div class="legend-dot" style="background:#8b5cf6"></div>Tomrör
+      <div class="legend-dot" style="background:#5a3a7a"></div>Tomrör
     </div>
   </div>
 </header>
@@ -501,7 +501,7 @@
   }
 
   const COLOR = {
-    KS: "#3b82f6", KR: "#10b981", FBK: "#f59e0b", "Tomrör": "#8b5cf6"
+    KS: "#1e4d8c", KR: "#1a6b45", FBK: "#8a6200", "Tomrör": "#5a3a7a"
   };
 
   const DRAWING_TYPE_LABEL = {
@@ -661,7 +661,7 @@
     if (c.uk_height) heights.push(`<div class="tt-row"><span>UK (bottom)</span><strong>${c.uk_height} mm ÖFG</strong></div>`);
 
     const fireLine = c.fire_rating
-      ? `<div class="tt-row"><span>Fire rating</span><strong style="color:#ef4444">${c.fire_rating}</strong></div>`
+      ? `<div class="tt-row"><span>Fire rating</span><strong style="color:#9c2c2c">${c.fire_rating}</strong></div>`
       : '';
     const vertLine = c.is_vertical
       ? `<div class="tt-row"><span>Orientation</span><strong>Vertical</strong></div>`
@@ -705,7 +705,7 @@
 
   // ── estimation panel ──────────────────────────────────────────────────────
   const CONF_COLOR = c =>
-    c >= 0.85 ? '#34d399' : c >= 0.65 ? '#fbbf24' : '#f87171';
+    c >= 0.85 ? '#1a6b45' : c >= 0.65 ? '#8a6200' : '#9c2c2c';
 
   function rebuildEstimate(data) {
     buildEstimatePanel(data);
@@ -757,9 +757,9 @@
       card.style.borderLeftColor = c;
 
       const fr  = item.fire_rating
-        ? `<span class="comp-card-badge" style="background:#ef444422;color:#ef4444">${item.fire_rating}</span>` : '';
+        ? `<span class="comp-card-badge" style="background:#9c2c2c22;color:#9c2c2c">${item.fire_rating}</span>` : '';
       const v   = item.orientation === 'vertical'
-        ? `<span class="comp-card-badge" style="background:#8b5cf622;color:#8b5cf6">VERT</span>` : '';
+        ? `<span class="comp-card-badge" style="background:#5a3a7a22;color:#5a3a7a">VERT</span>` : '';
       const confColor = CONF_COLOR(item.confidence);
       const confBadge = `<span class="est-conf" style="background:${confColor}22;color:${confColor}">${(item.confidence * 100).toFixed(0)}%</span>`;
 
