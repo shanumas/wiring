@@ -86,15 +86,20 @@
     /* ── component overlays ── */
     .comp-overlay {
       position: absolute;
-      border: 2px solid transparent;
-      border-radius: 2px;
-      cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
+      border: 1.5px solid transparent;
+      border-radius: 1px;
+      cursor: crosshair;
+      transition: background 0.12s, border-color 0.12s;
     }
-    .comp-overlay:hover,
-    .comp-overlay.active {
-      background: rgba(0,0,0,0.08) !important;
+    .comp-overlay:hover {
+      background: color-mix(in srgb, currentColor 12%, transparent) !important;
       border-color: currentColor !important;
+    }
+    .comp-overlay.active {
+      background: color-mix(in srgb, currentColor 18%, transparent) !important;
+      border-color: currentColor !important;
+      outline: 1px solid currentColor;
+      outline-offset: 1px;
     }
 
     /* ── tooltip ── */
@@ -574,9 +579,7 @@
         top:    ${y0 * scaleY}px;
         width:  ${(x1 - x0) * scaleX}px;
         height: ${(y1 - y0) * scaleY}px;
-        color: ${c.color};
-        border-color: ${c.color}66;
-        background: ${c.color}18;
+        color:  ${c.color};
       `;
 
       div.addEventListener('mouseenter', e => showTooltip(e, c));
