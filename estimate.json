@@ -9,13 +9,13 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 20,
-      "horizontal_length_mm": 79502,
+      "horizontal_length_mm": 55220,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 79502,
-      "total_length_m": 79.5,
+      "total_length_mm": 55220,
+      "total_length_m": 55.22,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 39751,
+      "total_cost_sek": 27610,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -31,13 +31,13 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 6,
-      "horizontal_length_mm": 1930,
+      "horizontal_length_mm": 7505,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 1930,
-      "total_length_m": 1.93,
+      "total_length_mm": 7505,
+      "total_length_m": 7.51,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 965,
+      "total_cost_sek": 3753,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -53,13 +53,13 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 4,
-      "horizontal_length_mm": 13471,
+      "horizontal_length_mm": 9391,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 13471,
-      "total_length_m": 13.47,
+      "total_length_mm": 9391,
+      "total_length_m": 9.39,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 6735,
+      "total_cost_sek": 4695,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -75,13 +75,13 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 3,
-      "horizontal_length_mm": 17944,
+      "horizontal_length_mm": 19810,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 17944,
-      "total_length_m": 17.94,
+      "total_length_mm": 19810,
+      "total_length_m": 19.81,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 8972,
+      "total_cost_sek": 9905,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -97,13 +97,13 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 3,
-      "horizontal_length_mm": 24167,
+      "horizontal_length_mm": 11344,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 24167,
-      "total_length_m": 24.17,
+      "total_length_mm": 11344,
+      "total_length_m": 11.34,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 12084,
+      "total_cost_sek": 5672,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -113,6 +113,51 @@
     {
       "system": "DA",
       "name": "DA",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 2,
+      "horizontal_length_mm": 6617,
+      "length_source": "annotation_span",
+      "vertical_length_mm": 0,
+      "total_length_mm": 6617,
+      "total_length_m": 6.62,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 3309,
+      "confidence": 0.35,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified",
+        "length lower-bound from annotation positions"
+      ]
+    },
+    {
+      "system": "NB",
+      "name": "NB",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 2,
+      "horizontal_length_mm": 9391,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 9391,
+      "total_length_m": 9.39,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 4695,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "S",
+      "name": "1-VÄGS STÄDUTTAG, 900 ÖFG",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
@@ -133,50 +178,6 @@
       ]
     },
     {
-      "system": "NB",
-      "name": "NB",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 2,
-      "horizontal_length_mm": 13471,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 13471,
-      "total_length_m": 13.47,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 6735,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "S",
-      "name": "1-VÄGS STÄDUTTAG, 900 ÖFG",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 2,
-      "horizontal_length_mm": 3981,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 3981,
-      "total_length_m": 3.98,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 1991,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
       "system": "3N/16A",
       "name": "3-FAS UTTAG, 16A, 1500 ÖFG",
       "orientation": "horizontal",
@@ -185,17 +186,18 @@
       "uk_ofg_mm": null,
       "fire_rating": "EI 30-C",
       "count": 1,
-      "horizontal_length_mm": 1589,
-      "length_source": "paths",
+      "horizontal_length_mm": 537,
+      "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 1589,
-      "total_length_m": 1.59,
+      "total_length_mm": 537,
+      "total_length_m": 0.54,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 795,
-      "confidence": 0.55,
+      "total_cost_sek": 269,
+      "confidence": 0.4,
       "confidence_notes": [
         "width unknown (per drawing)",
-        "mounting height unspecified"
+        "mounting height unspecified",
+        "length lower-bound from annotation positions"
       ]
     },
     {
@@ -207,17 +209,18 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 1,
-      "horizontal_length_mm": 15679,
-      "length_source": "paths",
+      "horizontal_length_mm": 443,
+      "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 15679,
-      "total_length_m": 15.68,
+      "total_length_mm": 443,
+      "total_length_m": 0.44,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 7840,
-      "confidence": 0.45,
+      "total_cost_sek": 222,
+      "confidence": 0.3,
       "confidence_notes": [
         "width unknown (per drawing)",
-        "mounting height unspecified"
+        "mounting height unspecified",
+        "length lower-bound from annotation positions"
       ]
     },
     {
@@ -229,17 +232,18 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 1,
-      "horizontal_length_mm": 1589,
-      "length_source": "paths",
+      "horizontal_length_mm": 194,
+      "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 1589,
-      "total_length_m": 1.59,
+      "total_length_mm": 194,
+      "total_length_m": 0.19,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 795,
-      "confidence": 0.45,
+      "total_cost_sek": 97,
+      "confidence": 0.3,
       "confidence_notes": [
         "width unknown (per drawing)",
-        "mounting height unspecified"
+        "mounting height unspecified",
+        "length lower-bound from annotation positions"
       ]
     },
     {
@@ -251,17 +255,18 @@
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 1,
-      "horizontal_length_mm": 15679,
-      "length_source": "paths",
+      "horizontal_length_mm": 443,
+      "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 15679,
-      "total_length_m": 15.68,
+      "total_length_mm": 443,
+      "total_length_m": 0.44,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 7840,
-      "confidence": 0.45,
+      "total_cost_sek": 222,
+      "confidence": 0.3,
       "confidence_notes": [
         "width unknown (per drawing)",
-        "mounting height unspecified"
+        "mounting height unspecified",
+        "length lower-bound from annotation positions"
       ]
     },
     {
@@ -273,72 +278,73 @@
       "uk_ofg_mm": null,
       "fire_rating": "EI 30-C",
       "count": 1,
-      "horizontal_length_mm": 15187,
-      "length_source": "paths",
+      "horizontal_length_mm": 1506,
+      "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 15187,
-      "total_length_m": 15.19,
+      "total_length_mm": 1506,
+      "total_length_m": 1.51,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 7594,
-      "confidence": 0.55,
+      "total_cost_sek": 753,
+      "confidence": 0.4,
       "confidence_notes": [
         "width unknown (per drawing)",
-        "mounting height unspecified"
+        "mounting height unspecified",
+        "length lower-bound from annotation positions"
       ]
     }
   ],
   "totals": {
-    "total_cost_sek": 118040,
-    "total_length_m": 236.08,
+    "total_cost_sek": 77145,
+    "total_length_m": 154.29,
     "scale_mm_per_pt": 17.6389,
     "by_system": {
       "4": {
-        "total_length_m": 79.5,
-        "total_cost_sek": 39751
+        "total_length_m": 55.22,
+        "total_cost_sek": 27610
       },
       "FBA": {
-        "total_length_m": 1.93,
-        "total_cost_sek": 965
+        "total_length_m": 7.51,
+        "total_cost_sek": 3753
       },
       "NS": {
-        "total_length_m": 13.47,
-        "total_cost_sek": 6735
+        "total_length_m": 9.39,
+        "total_cost_sek": 4695
       },
       "KO": {
-        "total_length_m": 17.94,
-        "total_cost_sek": 8972
+        "total_length_m": 19.81,
+        "total_cost_sek": 9905
       },
       "P": {
-        "total_length_m": 24.17,
-        "total_cost_sek": 12084
+        "total_length_m": 11.34,
+        "total_cost_sek": 5672
       },
       "DA": {
-        "total_length_m": 31.89,
-        "total_cost_sek": 15943
+        "total_length_m": 6.62,
+        "total_cost_sek": 3309
       },
       "NB": {
-        "total_length_m": 13.47,
-        "total_cost_sek": 6735
+        "total_length_m": 9.39,
+        "total_cost_sek": 4695
       },
       "S": {
-        "total_length_m": 19.17,
-        "total_cost_sek": 9585
+        "total_length_m": 33.4,
+        "total_cost_sek": 16696
       },
       "3N/16A": {
-        "total_length_m": 1.59,
-        "total_cost_sek": 795
+        "total_length_m": 0.54,
+        "total_cost_sek": 269
       },
       "B": {
-        "total_length_m": 15.68,
-        "total_cost_sek": 7840
+        "total_length_m": 0.44,
+        "total_cost_sek": 222
       },
       "D": {
-        "total_length_m": 1.59,
-        "total_cost_sek": 795
+        "total_length_m": 0.19,
+        "total_cost_sek": 97
       },
       "HL": {
-        "total_length_m": 15.68,
-        "total_cost_sek": 7840
+        "total_length_m": 0.44,
+        "total_cost_sek": 222
       }
     }
   }
