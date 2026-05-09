@@ -341,6 +341,21 @@
     }
     #zoom-label:hover { color: #ffffff; }
 
+    /* ── rotate button ── */
+    #rotate-btn {
+      background: #2e4470;
+      border: 1px solid #4a6296;
+      border-radius: 3px;
+      color: #c8d4ec;
+      font-size: 15px;
+      line-height: 1;
+      padding: 3px 9px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    #rotate-btn:hover { background: #3a5490; }
+
     /* ── drawing controls ── */
     .drawing-controls {
       display: flex;
@@ -454,6 +469,7 @@
       <span id="zoom-label" title="Reset zoom">100%</span>
       <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
     </div>
+    <button id="rotate-btn" title="Rotate 90°">↻</button>
     <span id="upload-status"></span>
   </div>
   <div class="legend">
@@ -545,6 +561,9 @@
     currentDrawingType  = compData.drawing_type || 'unknown';
 
     activeId = null;
+    displayRotation = 0;
+    document.getElementById('image-wrap').style.transform = '';
+    document.getElementById('image-wrap').style.margin    = '';
     buildOverlays();
     rebuildSidebar();
     rebuildEstimate(estData);
@@ -627,6 +646,28 @@
   });
   document.getElementById('zoom-label').addEventListener('click', () => {
     zoomLevel = 1.0; applyZoom();
+  });
+
+  // ── rotate ────────────────────────────────────────────────────────────────
+  let displayRotation = 0;
+
+  function applyDisplayRotation() {
+    const wrap = document.getElementById('image-wrap');
+    const img  = document.getElementById('drawing-img');
+    wrap.style.transform = `rotate(${displayRotation}deg)`;
+    // Compensate layout: when 90/270 the visual width/height swap
+    if (displayRotation === 90 || displayRotation === 270) {
+      const m = (img.offsetWidth - img.offsetHeight) / 2;
+      wrap.style.margin = `${m}px 0`;
+    } else {
+      wrap.style.margin = '';
+    }
+    buildOverlays();
+  }
+
+  document.getElementById('rotate-btn').addEventListener('click', () => {
+    displayRotation = (displayRotation + 90) % 360;
+    applyDisplayRotation();
   });
 
   // ── initial load ──────────────────────────────────────────────────────────
@@ -819,9 +860,6 @@
     });
 
     if (activeId) {
-      const card = document.querySelector(`.comp-card[data-id="${activeId}"]`);
-      if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-
       // scroll drawing to overlay
       const overlay = document.querySelector(`.comp-overlay[data-id="${activeId}"]`);
       if (overlay) overlay.scrollIntoView({ block: 'center', behavior: 'smooth' });
