@@ -271,6 +271,7 @@
       vertical-align: middle;
     }
     .est-table td:first-child { padding-left: 16px; }
+    .est-table tbody tr:hover { background: #f6f6f6; cursor: pointer; }
     .est-sys {
       font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
       font-size: 11px;
@@ -303,6 +304,43 @@
       color: #999999;
       border-top: 1px solid #eeeeee;
     }
+    /* ── zoom controls ── */
+    .zoom-controls {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border: 1px solid #4a6296;
+      border-radius: 3px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .zoom-btn {
+      background: #2e4470;
+      border: none;
+      color: #c8d4ec;
+      font-size: 16px;
+      font-weight: 400;
+      line-height: 1;
+      padding: 3px 9px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .zoom-btn:hover { background: #3a5490; }
+    #zoom-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #c8d4ec;
+      background: #1c2b4a;
+      padding: 3px 7px;
+      min-width: 40px;
+      text-align: center;
+      border-left: 1px solid #4a6296;
+      border-right: 1px solid #4a6296;
+      cursor: pointer;
+      user-select: none;
+    }
+    #zoom-label:hover { color: #ffffff; }
+
     /* ── drawing controls ── */
     .drawing-controls {
       display: flex;
@@ -365,6 +403,7 @@
       #drawing-select { flex: 1; max-width: none; font-size: 13px; }
       .upload-btn     { font-size: 13px; padding: 5px 10px; }
       #upload-status  { min-width: 0; }
+      .zoom-controls  { margin-left: auto; }
 
       main { flex-direction: column; }
 
@@ -410,6 +449,11 @@
       + Upload PDF
       <input type="file" id="file-input" accept=".pdf" multiple>
     </label>
+    <div class="zoom-controls">
+      <button class="zoom-btn" id="zoom-out" title="Zoom out">−</button>
+      <span id="zoom-label" title="Reset zoom">100%</span>
+      <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+    </div>
     <span id="upload-status"></span>
   </div>
   <div class="legend">
@@ -547,6 +591,42 @@
     }
 
     e.target.value = '';   // reset so same file can be re-uploaded
+  });
+
+  // ── zoom ──────────────────────────────────────────────────────────────────
+  const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+  let zoomLevel = 1.0;
+
+  function applyZoom() {
+    const pane = document.getElementById('drawing-pane');
+    const wrap = document.getElementById('image-wrap');
+    const img  = document.getElementById('drawing-img');
+    if (zoomLevel === 1.0) {
+      wrap.style.width = '';
+      img.style.width  = '';
+      img.style.maxWidth = '100%';
+    } else {
+      const base = pane.clientWidth - 32;
+      const w = Math.round(base * zoomLevel);
+      wrap.style.width   = w + 'px';
+      img.style.width    = w + 'px';
+      img.style.maxWidth = 'none';
+    }
+    document.getElementById('zoom-label').textContent =
+      Math.round(zoomLevel * 100) + '%';
+    buildOverlays();
+  }
+
+  document.getElementById('zoom-in').addEventListener('click', () => {
+    const idx = ZOOM_STEPS.findIndex(s => s > zoomLevel + 0.01);
+    if (idx !== -1) { zoomLevel = ZOOM_STEPS[idx]; applyZoom(); }
+  });
+  document.getElementById('zoom-out').addEventListener('click', () => {
+    const idx = [...ZOOM_STEPS].reverse().findIndex(s => s < zoomLevel - 0.01);
+    if (idx !== -1) { zoomLevel = [...ZOOM_STEPS].reverse()[idx]; applyZoom(); }
+  });
+  document.getElementById('zoom-label').addEventListener('click', () => {
+    zoomLevel = 1.0; applyZoom();
   });
 
   // ── initial load ──────────────────────────────────────────────────────────
@@ -704,20 +784,27 @@
 
   // ── select all drawn instances matching a summary variant ─────────────
   function selectVariant(s) {
+    // Normalise to null so String(null)="null" can't cause false mismatches
+    const sWidth = (s.width_mm != null && s.width_mm !== 'per_drawing')
+                   ? String(s.width_mm) : null;
+    const sOk    = s.ok_ofg_mm  != null ? String(s.ok_ofg_mm)  : null;
+    const sUk    = s.uk_ofg_mm  != null ? String(s.uk_ofg_mm)  : null;
+    const sFire  = s.fire_rating || null;
+
     const matches = components.filter(c =>
       c.bbox !== null &&
-      c.type        === s.system &&
-      (c.size ? String(c.size) : null) === (s.width_mm !== 'per_drawing' ? String(s.width_mm) : null) &&
-      (c.ok_height  || null) === (s.ok_ofg_mm  ? String(s.ok_ofg_mm)  : null) &&
-      (c.uk_height  || null) === (s.uk_ofg_mm  ? String(s.uk_ofg_mm)  : null) &&
-      (c.fire_rating || null) === (s.fire_rating || null)
+      c.type === s.system &&
+      (c.size        || null) === sWidth &&
+      (c.ok_height   || null) === sOk   &&
+      (c.uk_height   || null) === sUk   &&
+      (c.fire_rating || null) === sFire
     ).map(c => c.id);
 
-    const allSame = matches.length > 0 &&
-      matches.every(id => document.querySelector(`.comp-overlay[data-id="${id}"]`)?.classList.contains('active'));
+    const allActive = matches.length > 0 &&
+      matches.every(id =>
+        document.querySelector(`.comp-overlay[data-id="${id}"]`)?.classList.contains('active'));
 
-    // Toggle: if all already active, deselect all; otherwise select all
-    const nextState = !allSame;
+    const nextState = !allActive;
     document.querySelectorAll('.comp-overlay').forEach(el => {
       el.classList.toggle('active', nextState && matches.includes(el.dataset.id));
     });
@@ -820,25 +907,6 @@
     const t     = data.totals;
     const items = data.items.filter(i => typeof i.count === 'number');
 
-    const bodyRows = items.map(item => {
-      const c       = COLOR[item.system] || '#555555';
-      const sizeStr = item.width_mm === 'per_drawing' ? ''
-                    : item.width_mm ? ` ${item.width_mm}mm` : '';
-      const vertStr = item.orientation === 'vertical' ? ' V' : '';
-      const fire    = item.fire_rating
-        ? `<span class="est-fire">${item.fire_rating}</span>` : '';
-      return `
-        <tr>
-          <td>
-            <span class="est-sys" style="color:${c}">${item.system}${sizeStr}${vertStr}</span>
-            ${fire}
-          </td>
-          <td class="num">${item.total_length_m} m</td>
-          <td class="num" style="color:#666666">${item.unit_cost_sek_per_m}</td>
-          <td class="num" style="font-weight:600">${item.total_cost_sek.toLocaleString()}</td>
-        </tr>`;
-    }).join('');
-
     const table = document.createElement('table');
     table.className = 'est-table';
     table.innerHTML = `
@@ -850,7 +918,7 @@
           <th class="num">SEK</th>
         </tr>
       </thead>
-      <tbody>${bodyRows}</tbody>
+      <tbody></tbody>
       <tfoot>
         <tr>
           <td>Total</td>
@@ -859,6 +927,32 @@
           <td class="num est-total-cost">${t.total_cost_sek.toLocaleString()}</td>
         </tr>
       </tfoot>`;
+
+    const tbody = table.querySelector('tbody');
+    items.forEach(item => {
+      const c       = COLOR[item.system] || '#555555';
+      const sizeStr = item.width_mm === 'per_drawing' ? ''
+                    : item.width_mm ? ` ${item.width_mm}mm` : '';
+      const vertStr = item.orientation === 'vertical' ? ' V' : '';
+      const fire    = item.fire_rating
+        ? `<span class="est-fire">${item.fire_rating}</span>` : '';
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.innerHTML = `
+        <td>
+          <span class="est-sys" style="color:${c}">${item.system}${sizeStr}${vertStr}</span>
+          ${fire}
+        </td>
+        <td class="num">${item.total_length_m} m</td>
+        <td class="num" style="color:#666666">${item.unit_cost_sek_per_m}</td>
+        <td class="num" style="font-weight:600">${item.total_cost_sek.toLocaleString()}</td>`;
+      tr.addEventListener('click', () => {
+        tbody.querySelectorAll('tr').forEach(r => r.style.background = '');
+        tr.style.background = '#eef2f8';
+        selectVariant(item);
+      });
+      tbody.appendChild(tr);
+    });
     list.appendChild(table);
 
     const note = document.createElement('div');
