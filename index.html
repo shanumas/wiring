@@ -765,6 +765,7 @@
     drawnSummary.forEach(s => {
       const row = document.createElement('div');
       row.className = 'comp-row';
+      row.dataset.vkey = variantKey(s);
       row.style.setProperty('--c', col(s));
 
       const sizeStr  = s.width_mm === 'per_drawing' ? 'per dwg'
@@ -823,6 +824,12 @@
     }
   }
 
+  // ── stable key for a summary / estimate item ─────────────────────────
+  function variantKey(s) {
+    return [s.system, s.width_mm ?? '', s.ok_ofg_mm ?? '', s.uk_ofg_mm ?? '',
+            s.fire_rating ?? '', s.orientation].join('|');
+  }
+
   // ── select all drawn instances matching a summary variant ─────────────
   function selectVariant(s) {
     // Normalise to null so String(null)="null" can't cause false mismatches
@@ -855,12 +862,40 @@
   function selectComponent(id) {
     activeId = (activeId === id) ? null : id;
 
+    // Highlight / un-highlight overlays
     document.querySelectorAll('.comp-overlay').forEach(el => {
       el.classList.toggle('active', el.dataset.id === activeId);
     });
 
+    // Clear previous table highlights
+    document.querySelectorAll('.comp-row').forEach(r => r.classList.remove('active'));
+    document.querySelectorAll('.est-table tbody tr').forEach(r => r.style.background = '');
+
     if (activeId) {
-      // scroll drawing to overlay
+      // Find component object
+      const c = components.find(comp => comp.id === activeId);
+      if (c) {
+        // Find matching summary variant
+        const s = summary.find(s =>
+          s.system === c.type &&
+          ((c.size   || null) === ((s.width_mm != null && s.width_mm !== 'per_drawing') ? String(s.width_mm) : null)) &&
+          ((c.ok_height || null) === (s.ok_ofg_mm != null ? String(s.ok_ofg_mm) : null)) &&
+          ((c.uk_height || null) === (s.uk_ofg_mm != null ? String(s.uk_ofg_mm) : null)) &&
+          ((c.fire_rating || null) === (s.fire_rating || null))
+        );
+        if (s) {
+          const key = variantKey(s);
+          const compRow = document.querySelector(`.comp-row[data-vkey="${key}"]`);
+          if (compRow) {
+            compRow.classList.add('active');
+            compRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+          const estRow = document.querySelector(`.est-table tbody tr[data-vkey="${key}"]`);
+          if (estRow) estRow.style.background = '#eef2f8';
+        }
+      }
+
+      // Scroll the clicked overlay into view
       const overlay = document.querySelector(`.comp-overlay[data-id="${activeId}"]`);
       if (overlay) overlay.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
@@ -976,6 +1011,7 @@
         ? `<span class="est-fire">${item.fire_rating}</span>` : '';
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
+      tr.dataset.vkey = variantKey(item);
       tr.innerHTML = `
         <td>
           <span class="est-sys" style="color:${c}">${item.system}${sizeStr}${vertStr}</span>
