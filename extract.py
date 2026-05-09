@@ -226,7 +226,7 @@ def _extract_generic(page, legend_codes, legend_y, ei_bboxes):
                 "is_vertical": False,
                 "fire_rating": fire,
                 "label":       code,
-                "bbox":        [round(x, 2) for x in bb] if bb is not None else None,
+                "bbox":        [round(x, 2) for x in _to_display_bbox(bb, page)] if bb is not None else None,
                 "occurrences": 1,
             })
 
@@ -259,6 +259,27 @@ def _extract_generic(page, legend_codes, legend_y, ei_bboxes):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _to_display_bbox(bbox, page):
+    """
+    Transform a bbox from PyMuPDF's text-extraction coordinate space
+    (unrotated mediabox) to the display coordinate space (what the rendered
+    PNG actually shows).  Required when page.rotation != 0.
+    """
+    x0, y0, x1, y1 = bbox
+    rot = page.rotation
+    if rot == 270:
+        # Portrait → landscape: display_x = orig_y, display_y = orig_W - orig_x
+        W = page.rect.height   # display height = original width
+        return (y0, W - x1, y1, W - x0)
+    elif rot == 90:
+        H = page.rect.width    # display width = original height
+        return (H - y1, x0, H - y0, x1)
+    elif rot == 180:
+        W, H = page.rect.width, page.rect.height
+        return (W - x1, H - y1, W - x0, H - y0)
+    return bbox                # rotation == 0, no transform needed
+
 
 def tight_bbox(block):
     """Tighten block bbox to start from the first component-code span."""
@@ -436,7 +457,7 @@ def extract(pdf_path=PDF_PATH):
 
         parsed["id"]          = f"{parsed['type']}_{len(components)}"
         parsed["label"]       = full
-        parsed["bbox"]        = [round(x, 2) for x in tight]
+        parsed["bbox"]        = [round(x, 2) for x in _to_display_bbox(tight, page)]
         parsed["occurrences"] = 1    # individual instance
         components.append(parsed)
 

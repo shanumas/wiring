@@ -86,21 +86,16 @@
     /* ── component overlays ── */
     .comp-overlay {
       position: absolute;
-      border: 1.5px solid var(--oc);
+      border: 2px solid currentColor;
       border-radius: 1px;
-      background: var(--ob);
       cursor: pointer;
-      transition: border-color 0.12s, background 0.12s, outline 0.12s;
+      opacity: 0.4;
+      transition: opacity 0.12s;
     }
-    .comp-overlay:hover {
-      border-color: var(--oc-h) !important;
-      background:   var(--ob-h) !important;
-    }
+    .comp-overlay:hover  { opacity: 0.85; }
     .comp-overlay.active {
-      border-color: var(--oc-h) !important;
-      background:   var(--ob-h) !important;
-      outline: 2px solid var(--oc-h);
-      outline-offset: 1px;
+      opacity: 1;
+      box-shadow: 0 0 0 2px currentColor;
     }
 
     /* ── tooltip ── */
@@ -575,16 +570,12 @@
       const div = document.createElement('div');
       div.className = 'comp-overlay';
       div.dataset.id = c.id;
-      div.style.cssText = `
-        left:    ${x0 * scaleX}px;
-        top:     ${y0 * scaleY}px;
-        width:   ${(x1 - x0) * scaleX}px;
-        height:  ${(y1 - y0) * scaleY}px;
-        --oc:    ${c.color}55;
-        --ob:    ${c.color}12;
-        --oc-h:  ${c.color};
-        --ob-h:  ${c.color}30;
-      `;
+      div.style.left       = `${x0 * scaleX}px`;
+      div.style.top        = `${y0 * scaleY}px`;
+      div.style.width      = `${(x1 - x0) * scaleX}px`;
+      div.style.height     = `${(y1 - y0) * scaleY}px`;
+      div.style.color      = c.color;
+      div.style.background = c.color + '22';
 
       div.addEventListener('mouseenter', e => showTooltip(e, c));
       div.addEventListener('mousemove',  e => moveTooltip(e));
