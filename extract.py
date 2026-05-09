@@ -15,10 +15,10 @@ OUTPUT   = "components.json"
 
 # ── Component metadata ────────────────────────────────────────────────────────
 COMP_META = {
-    "KS":     {"name": "Kabelstege",         "en": "Cable Ladder",        "color": "#3b82f6"},
-    "KR":     {"name": "Kabelränna",          "en": "Cable Tray",          "color": "#10b981"},
-    "FBK":    {"name": "Fönsterbänkskanal",   "en": "Window Sill Channel", "color": "#f59e0b"},
-    "Tomrör": {"name": "Tomrör",              "en": "Conduit",             "color": "#8b5cf6"},
+    "KS":     {"name": "Kabelstege",         "en": "Cable Ladder",        "color": "#1e4d8c"},
+    "KR":     {"name": "Kabelränna",          "en": "Cable Tray",          "color": "#1a6b45"},
+    "FBK":    {"name": "Fönsterbänkskanal",   "en": "Window Sill Channel", "color": "#8a6200"},
+    "Tomrör": {"name": "Tomrör",              "en": "Conduit",             "color": "#5a3a7a"},
 }
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
@@ -74,10 +74,16 @@ _GEN_DRAW_SKIP = re.compile(
 _GEN_TOK = re.compile(r'[A-ZÅÄÖ0-9][A-ZÅÄÖ0-9/\-]*')
 
 _GEN_PALETTE = [
-    "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6",
-    "#ef4444", "#06b6d4", "#f97316", "#84cc16",
-    "#ec4899", "#14b8a6", "#a855f7", "#22c55e",
+    "#1e4d8c", "#1a6b45", "#8a6200", "#5a3a7a",
+    "#9c2c2c", "#1a5c6e", "#7a4a00", "#2c5a3a",
+    "#4a2c7a", "#1a4a5c", "#6e3a1a", "#1a4a2c",
 ]
+
+# Wire/cable annotation patterns — these are routing labels, not component symbols
+_WIRE_ANNOT = re.compile(
+    r'\d+[xX]\d|\d+\s*mm|\b(?:NYM|NHXMH|FTP|CAT|RJ|KABEL|LEDNING)\b',
+    re.IGNORECASE
+)
 
 
 def _gen_color(code):
@@ -184,9 +190,18 @@ def _extract_generic(page, legend_codes, legend_y, ei_bboxes):
                 fire = "EI 30-C"
                 break
 
+        # Only use bbox when this block looks like a symbol annotation
+        # (≤4 tokens, no wire-spec patterns like "2x1.5" or "NYM").
+        # Wire/routing labels are still counted but get no position overlay.
+        is_symbol_block = (
+            len(full.split()) <= 4
+            and not _WIRE_ANNOT.search(full)
+        )
+        bbox_val = bb if is_symbol_block else None
+
         for tok in _GEN_TOK.findall(full):
             if tok in legend_codes:
-                code_instances[tok].append((bb, fire))
+                code_instances[tok].append((bbox_val, fire))
 
     # Build component list (one entry per instance)
     components = []
@@ -211,7 +226,7 @@ def _extract_generic(page, legend_codes, legend_y, ei_bboxes):
                 "is_vertical": False,
                 "fire_rating": fire,
                 "label":       code,
-                "bbox":        [round(x, 2) for x in bb],
+                "bbox":        [round(x, 2) for x in bb] if bb is not None else None,
                 "occurrences": 1,
             })
 
@@ -432,7 +447,7 @@ def extract(pdf_path=PDF_PATH):
             "type":        "Tomrör",
             "name":        "Tomrör",
             "en_name":     "Conduit",
-            "color":       "#8b5cf6",
+            "color":       "#5a3a7a",
             "size":        None,
             "diameter_mm": int(tomror_diameter),
             "ok_height":   None,
