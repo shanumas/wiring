@@ -149,111 +149,158 @@
       color: #1c2b4a;
       border-bottom-color: #1c2b4a;
     }
-    .sidebar-panel { display: none; flex: 1 1 0; overflow-y: auto; padding: 8px 0; }
+    .sidebar-panel { display: none; overflow-y: auto; }
     .sidebar-panel.active { display: block; }
 
-    /* ── estimate cards ── */
-    .est-card {
-      padding: 10px 16px;
-      border-left: 3px solid transparent;
-    }
-    .est-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: #1a1a1a;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .est-sub {
-      font-size: 11px;
-      color: #666666;
-      margin-top: 3px;
-      line-height: 1.5;
-    }
-    .est-cost {
-      font-size: 13px;
-      font-weight: 700;
-      color: #1a5c3a;
-    }
-    .est-conf {
-      font-size: 10px;
-      padding: 1px 5px;
-      border-radius: 2px;
-      font-weight: 600;
-    }
-    .est-totals {
-      margin: 8px 12px;
-      padding: 10px 12px;
-      background: #f0f0f0;
-      border-radius: 2px;
-      border: 1px solid #d4d4d4;
-      font-size: 12px;
-    }
-    .est-totals .tot-row {
-      display: flex;
-      justify-content: space-between;
-      padding: 2px 0;
-      color: #555555;
-    }
-    .est-totals .tot-row strong { color: #1a1a1a; }
-    .est-totals .grand { border-top: 1px solid #c8c8c8; margin-top: 6px; padding-top: 6px; color: #1a1a1a; font-weight: 700; }
-
     #sidebar {
-      flex: 0 0 280px;
+      flex: 0 0 300px;
       background: #ffffff;
       border-left: 1px solid #d4d4d4;
       display: flex;
       flex-direction: column;
       overflow: hidden;
     }
-    #sidebar h2 {
-      flex: 0 0 auto;
-      padding: 12px 16px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #888888;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      border-bottom: 1px solid #d4d4d4;
-    }
-    #comp-list {
-      flex: 1 1 0;
-      overflow-y: auto;
-      padding: 8px 0;
-    }
-    .comp-card {
-      padding: 9px 16px;
-      cursor: pointer;
-      border-left: 3px solid transparent;
-      transition: background 0.1s;
-    }
-    .comp-card:hover,
-    .comp-card.active {
-      background: #f4f4f4;
-    }
-    .comp-card.active {
-      border-left-color: var(--c);
-    }
-    .comp-card-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #1a1a1a;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-    }
-    .comp-card-badge {
+    #comp-list { }
+
+    /* ── components table ── */
+    .tbl-head {
+      display: grid;
+      grid-template-columns: 64px 1fr 28px;
+      padding: 5px 12px 5px 16px;
       font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 2px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
+      font-weight: 600;
+      color: #999999;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid #e0e0e0;
+      background: #f7f7f7;
+      position: sticky;
+      top: 0;
+      z-index: 1;
     }
-    .comp-card-sub {
+    .tbl-head .num { text-align: right; }
+    .comp-row {
+      display: grid;
+      grid-template-columns: 64px 1fr 28px;
+      padding: 7px 12px 7px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      align-items: start;
+      position: relative;
+      transition: background 0.08s;
+    }
+    .comp-row::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--c, #cccccc);
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    .comp-row:hover  { background: #f6f6f6; }
+    .comp-row.active { background: #eef2f8; }
+    .comp-row.active::before { opacity: 1; }
+    .comp-row.legend-row { opacity: 0.65; cursor: default; }
+    .comp-code {
+      font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
       font-size: 11px;
-      color: #777777;
+      font-weight: 700;
+      color: var(--c, #444444);
+      padding-top: 1px;
+    }
+    .comp-name {
+      font-size: 11px;
+      color: #1a1a1a;
+      line-height: 1.35;
+    }
+    .comp-detail {
+      font-size: 10px;
+      color: #888888;
       margin-top: 2px;
+      line-height: 1.4;
+    }
+    .comp-fire {
+      color: #9c2c2c;
+      font-weight: 600;
+    }
+    .comp-qty {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1a1a1a;
+      text-align: right;
+      padding-top: 1px;
+    }
+    .tbl-sep {
+      padding: 5px 16px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #999999;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-top: 1px solid #e0e0e0;
+      background: #f7f7f7;
+    }
+
+    /* ── estimate table ── */
+    .est-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .est-table th {
+      padding: 5px 12px 5px 16px;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 600;
+      color: #999999;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid #e0e0e0;
+      background: #f7f7f7;
+      position: sticky;
+      top: 0;
+      white-space: nowrap;
+    }
+    .est-table th.num, .est-table td.num { text-align: right; }
+    .est-table td {
+      padding: 7px 12px 7px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      color: #2a2a2a;
+      vertical-align: middle;
+    }
+    .est-table td:first-child { padding-left: 16px; }
+    .est-sys {
+      font-family: 'SF Mono', 'Consolas', 'Menlo', monospace;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .est-fire {
+      font-size: 9px;
+      color: #9c2c2c;
+      font-weight: 600;
+      display: block;
+      margin-top: 1px;
+    }
+    .est-table tfoot td {
+      border-top: 2px solid #1c2b4a;
+      border-bottom: none;
+      font-weight: 700;
+      color: #1a1a1a;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      background: #f7f7f7;
+    }
+    .est-total-cost {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1a1a1a;
+    }
+    .est-note {
+      padding: 8px 16px;
+      font-size: 10px;
+      color: #999999;
+      border-top: 1px solid #eeeeee;
     }
     /* ── drawing controls ── */
     .drawing-controls {
@@ -348,9 +395,7 @@
         box-shadow: 0 -2px 16px rgba(0,0,0,0.18);
       }
 
-      .comp-card  { padding: 10px 14px; }
-      .est-card   { padding: 10px 14px; }
-      .est-totals { margin: 8px 10px; }
+      .est-table th, .est-table td { padding: 6px 10px 6px 12px; }
     }
   </style>
 </head>
@@ -396,7 +441,6 @@
       <div class="sidebar-tab"        data-panel="est-panel">Estimate</div>
     </div>
     <div id="comp-panel" class="sidebar-panel active">
-      <div style="padding:6px 16px 2px;font-size:11px;color:#777777" id="count"></div>
       <div id="comp-list"></div>
     </div>
     <div id="est-panel" class="sidebar-panel">
@@ -454,10 +498,6 @@
     pageW               = compData.page_width;
     pageH               = compData.page_height;
     currentDrawingType  = compData.drawing_type || 'unknown';
-
-    const drawn = components.filter(c => c.bbox !== null);
-    document.getElementById('count').textContent =
-      drawn.length > 0 ? `(${drawn.length} instances)` : '';
 
     activeId = null;
     buildOverlays();
@@ -578,101 +618,88 @@
   function buildSidebar() {
     const list = document.getElementById('comp-list');
 
-    // ── Empty state for non-canalisation drawings ─────────────────────────
+    // ── Empty state ───────────────────────────────────────────────────────
     if (summary.length === 0) {
       const label = DRAWING_TYPE_LABEL[currentDrawingType] || currentDrawingType;
       list.innerHTML = `
-        <div style="padding:24px 16px 16px;text-align:center">
-          <div style="font-size:28px;margin-bottom:10px">📄</div>
-          <div style="font-size:13px;font-weight:600;color:#666666;margin-bottom:6px">
-            No canalisation components
+        <div style="padding:24px 16px;text-align:center">
+          <div style="font-size:13px;font-weight:600;color:#666666;margin-bottom:6px">No components extracted</div>
+          <div style="font-size:11px;color:#888888;line-height:1.6">
+            Type: <strong style="color:#1a1a1a">${label}</strong><br>
+            No KS / KR / FBK annotations found.
           </div>
-          <div style="font-size:11px;color:#555555;line-height:1.6">
-            Drawing type detected:<br>
-            <strong style="color:#1a1a1a">${label}</strong>
-          </div>
-          <div style="font-size:11px;color:#888888;margin-top:10px">
-            This drawing contains no KS / KR / FBK annotations.<br>
-            The drawing image is still viewable above.
-          </div>
-        </div>
-      `;
+        </div>`;
       return;
     }
 
-    // ── Drawn + counted variants (from summary, count is a number) ────────
     const drawnSummary  = summary.filter(s => typeof s.count === 'number');
     const legendSummary = summary.filter(s => typeof s.count !== 'number');
-    const col = s => COLOR[s.system] || "#94a3b8";
+    const col = s => COLOR[s.system] || "#555555";
 
+    // ── Table header ──────────────────────────────────────────────────────
+    const head = document.createElement('div');
+    head.className = 'tbl-head';
+    head.innerHTML = `<span>Code</span><span>Description</span><span class="num">Qty</span>`;
+    list.appendChild(head);
+
+    // ── Drawn rows ────────────────────────────────────────────────────────
     drawnSummary.forEach(s => {
-      const card = document.createElement('div');
-      card.className = 'comp-card';
-      card.style.setProperty('--c', col(s));
+      const row = document.createElement('div');
+      row.className = 'comp-row';
+      row.style.setProperty('--c', col(s));
 
-      const heights = [];
-      if (s.ok_ofg_mm) heights.push(`ÖK ${s.ok_ofg_mm} mm ÖFG`);
-      if (s.uk_ofg_mm) heights.push(`UK ${s.uk_ofg_mm} mm ÖFG`);
-
-      const fireBadge = s.fire_rating
-        ? `<span class="comp-card-badge" style="background:#ef444422;color:#ef4444;margin-left:4px">${s.fire_rating}</span>`
-        : '';
-      const vertTag = s.orientation === 'vertical'
-        ? ' <em style="color:#94a3b8;font-size:10px">VERT</em>' : '';
-      const widthStr = s.width_mm === 'per_drawing' ? 'per drawing'
+      const sizeStr  = s.width_mm === 'per_drawing' ? 'per dwg'
                      : s.width_mm ? `${s.width_mm} mm` : '';
-      const countBadge = `<span style="margin-left:auto;font-size:11px;color:#64748b">×${s.count}</span>`;
+      const vertStr  = s.orientation === 'vertical' ? 'Vertical' : '';
+      const fireStr  = s.fire_rating ? `<span class="comp-fire">${s.fire_rating}</span>` : '';
+      const hParts   = [];
+      if (s.ok_ofg_mm) hParts.push(`ÖK ${s.ok_ofg_mm}`);
+      if (s.uk_ofg_mm) hParts.push(`UK ${s.uk_ofg_mm}`);
+      const hStr     = hParts.length ? hParts.join(' · ') + ' mm ÖFG' : '';
+      const details  = [sizeStr, vertStr, hStr, fireStr].filter(Boolean).join(' &nbsp;·&nbsp; ');
 
-      card.innerHTML = `
-        <div class="comp-card-title" style="justify-content:space-between">
-          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-            <span class="comp-card-badge"
-                  style="background:${col(s)}22;color:${col(s)}">${s.system}</span>
-            ${s.name} ${widthStr}${vertTag}${fireBadge}
-          </div>
-          ${countBadge}
+      row.innerHTML = `
+        <div class="comp-code">${s.system}</div>
+        <div>
+          <div class="comp-name">${s.name}</div>
+          ${details ? `<div class="comp-detail">${details}</div>` : ''}
         </div>
-        <div class="comp-card-sub">${heights.join(' · ') || 'No height data'}</div>
-      `;
+        <div class="comp-qty">${s.count}</div>`;
 
-      // clicking highlights all matching instances on the drawing
-      card.addEventListener('click', () => selectVariant(s));
-      list.appendChild(card);
+      row.addEventListener('click', () => {
+        list.querySelectorAll('.comp-row').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
+        selectVariant(s);
+      });
+      list.appendChild(row);
     });
 
-    // ── Legend / notes entries ────────────────────────────────────────────
+    // ── Legend / notes rows ───────────────────────────────────────────────
     if (legendSummary.length) {
       const sep = document.createElement('div');
-      sep.style.cssText = 'padding:8px 16px 4px;font-size:10px;font-weight:600;color:#777777;text-transform:uppercase;letter-spacing:0.8px;border-top:1px solid #d4d4d4;margin-top:4px';
-      sep.textContent = 'From legend / notes';
+      sep.className = 'tbl-sep';
+      sep.textContent = 'Legend / Notes';
       list.appendChild(sep);
 
       legendSummary.forEach(s => {
-        const card = document.createElement('div');
-        card.className = 'comp-card';
-        card.style.setProperty('--c', col(s));
-        card.style.opacity = '0.75';
+        const row = document.createElement('div');
+        row.className = 'comp-row legend-row';
+        row.style.setProperty('--c', col(s));
 
-        const heights = [];
-        if (s.ok_ofg_mm) heights.push(`ÖK ${s.ok_ofg_mm} mm ÖFG`);
-        if (s.uk_ofg_mm) heights.push(`UK ${s.uk_ofg_mm} mm ÖFG`);
-        const diam = s.diameter_mm ? `Ø${s.diameter_mm} mm` : '';
-        const vertTag = s.orientation === 'vertical'
-          ? ' <em style="color:#94a3b8;font-size:10px">VERT</em>' : '';
-        const widthStr = s.width_mm === 'per_drawing' ? 'per drawing'
-                       : s.width_mm ? `${s.width_mm} mm` : '';
-        const sub = [diam, heights.join(' · ')].filter(Boolean).join('  ')
-                    || (s.width_mm === 'per_drawing' ? 'Size per drawing' : 'No height data');
+        const diamStr = s.diameter_mm ? `Ø${s.diameter_mm} mm` : '';
+        const sizeStr = s.width_mm === 'per_drawing' ? 'per dwg'
+                      : s.width_mm ? `${s.width_mm} mm` : '';
+        const vertStr = s.orientation === 'vertical' ? 'Vertical' : '';
+        const details = [diamStr, sizeStr, vertStr].filter(Boolean).join(' · ');
 
-        card.innerHTML = `
-          <div class="comp-card-title">
-            <span class="comp-card-badge"
-                  style="background:${col(s)}22;color:${col(s)}">${s.system}</span>
-            ${s.name} ${widthStr}${vertTag}
+        row.innerHTML = `
+          <div class="comp-code">${s.system}</div>
+          <div>
+            <div class="comp-name">${s.name}</div>
+            ${details ? `<div class="comp-detail">${details}</div>` : ''}
           </div>
-          <div class="comp-card-sub">${sub}</div>
-        `;
-        list.appendChild(card);
+          <div class="comp-qty" style="color:#aaaaaa">—</div>`;
+        list.appendChild(row);
       });
     }
   }
@@ -782,84 +809,64 @@
     if (!data.items || data.items.length === 0) {
       const label = DRAWING_TYPE_LABEL[currentDrawingType] || currentDrawingType;
       list.innerHTML = `
-        <div style="padding:24px 16px 16px;text-align:center">
-          <div style="font-size:11px;color:#555555;line-height:1.6">
-            No estimate available.<br>
+        <div style="padding:24px 16px;text-align:center">
+          <div style="font-size:13px;font-weight:600;color:#666666;margin-bottom:6px">No estimate available</div>
+          <div style="font-size:11px;color:#888888;line-height:1.6">
             <strong style="color:#1a1a1a">${label}</strong> drawing<br>
             contains no canalisation systems.
           </div>
-        </div>
-      `;
+        </div>`;
       return;
     }
 
-    const t    = data.totals;
+    const t     = data.totals;
+    const items = data.items.filter(i => typeof i.count === 'number');
 
-    // ── totals block ──────────────────────────────────────────────────────
-    const totDiv = document.createElement('div');
-    totDiv.className = 'est-totals';
-    const bySystemRows = Object.entries(t.by_system)
-      .sort((a, b) => b[1].total_cost_sek - a[1].total_cost_sek)
-      .map(([sys, v]) =>
-        `<div class="tot-row"><span>${sys}</span><strong>${v.total_length_m} m &nbsp; ${v.total_cost_sek.toLocaleString()} SEK</strong></div>`
-      ).join('');
-    totDiv.innerHTML = `
-      ${bySystemRows}
-      <div class="tot-row grand">
-        <span>Total (${t.total_length_m} m)</span>
-        <strong>${t.total_cost_sek.toLocaleString()} SEK</strong>
-      </div>
-      <div style="font-size:10px;color:#475569;margin-top:6px">Excl. VAT · Indicative rates</div>
-    `;
-    list.appendChild(totDiv);
+    const bodyRows = items.map(item => {
+      const c       = COLOR[item.system] || '#555555';
+      const sizeStr = item.width_mm === 'per_drawing' ? ''
+                    : item.width_mm ? ` ${item.width_mm}mm` : '';
+      const vertStr = item.orientation === 'vertical' ? ' V' : '';
+      const fire    = item.fire_rating
+        ? `<span class="est-fire">${item.fire_rating}</span>` : '';
+      return `
+        <tr>
+          <td>
+            <span class="est-sys" style="color:${c}">${item.system}${sizeStr}${vertStr}</span>
+            ${fire}
+          </td>
+          <td class="num">${item.total_length_m} m</td>
+          <td class="num" style="color:#666666">${item.unit_cost_sek_per_m}</td>
+          <td class="num" style="font-weight:600">${item.total_cost_sek.toLocaleString()}</td>
+        </tr>`;
+    }).join('');
 
-    // ── per-item cards ────────────────────────────────────────────────────
-    data.items.filter(i => typeof i.count === 'number').forEach(item => {
-      const card = document.createElement('div');
-      card.className = 'est-card';
-      const c   = COLOR[item.system] || '#94a3b8';
-      card.style.borderLeftColor = c;
+    const table = document.createElement('table');
+    table.className = 'est-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>System</th>
+          <th class="num">Length</th>
+          <th class="num">SEK/m</th>
+          <th class="num">SEK</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          <td class="num">${t.total_length_m} m</td>
+          <td></td>
+          <td class="num est-total-cost">${t.total_cost_sek.toLocaleString()}</td>
+        </tr>
+      </tfoot>`;
+    list.appendChild(table);
 
-      const fr  = item.fire_rating
-        ? `<span class="comp-card-badge" style="background:#9c2c2c22;color:#9c2c2c">${item.fire_rating}</span>` : '';
-      const v   = item.orientation === 'vertical'
-        ? `<span class="comp-card-badge" style="background:#5a3a7a22;color:#5a3a7a">VERT</span>` : '';
-      const confColor = CONF_COLOR(item.confidence);
-      const confBadge = `<span class="est-conf" style="background:${confColor}22;color:${confColor}">${(item.confidence * 100).toFixed(0)}%</span>`;
-
-      const heightStr = [
-        item.ok_ofg_mm ? `ÖK ${item.ok_ofg_mm}` : '',
-        item.uk_ofg_mm ? `UK ${item.uk_ofg_mm}` : '',
-      ].filter(Boolean).join(' / ') || '—';
-
-      const confNotes = item.confidence_notes?.length
-        ? `<div style="font-size:10px;color:#475569;margin-top:2px">${item.confidence_notes.join(' · ')}</div>`
-        : '';
-
-      card.innerHTML = `
-        <div class="est-title">
-          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-            <span class="comp-card-badge" style="background:${c}22;color:${c}">${item.system}</span>
-            ${item.width_mm === 'per_drawing' ? 'per drawing' : item.width_mm ? item.width_mm + ' mm' : ''}
-            ${fr}${v}
-            <span style="color:#64748b;font-size:11px">×${item.count}</span>
-          </div>
-          ${confBadge}
-        </div>
-        <div class="est-sub">
-          ${heightStr} &nbsp;·&nbsp;
-          H: ${item.horizontal_length_mm / 1000}m &nbsp;·&nbsp;
-          V: ${item.vertical_length_mm / 1000}m &nbsp;·&nbsp;
-          ${item.total_length_m}m total
-          <br>
-          ${item.unit_cost_sek_per_m} SEK/m &nbsp;·&nbsp;
-          <span class="est-cost">${item.total_cost_sek.toLocaleString()} SEK</span>
-          <span style="color:#475569"> (${item.length_source})</span>
-        </div>
-        ${confNotes}
-      `;
-      list.appendChild(card);
-    });
+    const note = document.createElement('div');
+    note.className = 'est-note';
+    note.textContent = 'Excl. VAT · Indicative rates';
+    list.appendChild(note);
   }
 </script>
 </body>
