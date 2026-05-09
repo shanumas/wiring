@@ -15,7 +15,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 import fitz
 from extract import extract
-from estimate import estimate
+from extract_vector import extract_vectors
+from estimate import estimate, COST_TABLE, COST_FALLBACK_PER_M
 
 app    = FastAPI()
 PDF_DIR = Path("pdf")
@@ -26,6 +27,45 @@ PDF_DIR.mkdir(exist_ok=True)
 _cache: dict = {}
 
 
+def _estimate_vector(vec_data: dict) -> dict:
+    """Produce an estimate from vector-extracted data (lengths already measured)."""
+    items = []
+    total_cost = 0
+    total_len  = 0.0
+
+    for s in vec_data["summary"]:
+        if not isinstance(s.get("count"), int):
+            continue
+        w  = s.get("width_mm")
+        fr = s.get("fire_rating")
+        key = (s["system"], w if isinstance(w, int) else None, fr)
+        unit_cost = COST_TABLE.get(key, COST_FALLBACK_PER_M)
+        length_m  = s.get("total_length_m", 0.0)
+        cost      = round(unit_cost * length_m)
+        total_cost += cost
+        total_len  += length_m
+        items.append({
+            **s,
+            "total_length_m":       round(length_m, 2),
+            "total_length_mm":      round(length_m * 1000),
+            "horizontal_length_mm": round(length_m * 1000),
+            "vertical_length_mm":   0,
+            "length_source":        "vector_paths",
+            "unit_cost_sek_per_m":  unit_cost,
+            "total_cost_sek":       cost,
+            "confidence":           0.85,
+            "confidence_notes":     ["length measured from drawing geometry"],
+        })
+
+    return {
+        "items":  items,
+        "totals": {
+            "total_cost_sek": total_cost,
+            "total_length_m": round(total_len, 2),
+        },
+    }
+
+
 def _process(pdf_path: Path) -> dict:
     """Render PNG + run extract + estimate for one PDF. Returns cache entry."""
     doc  = fitz.open(str(pdf_path))
@@ -34,10 +74,18 @@ def _process(pdf_path: Path) -> dict:
     png  = pix.tobytes("png")
     doc.close()
 
-    comp = extract(str(pdf_path))
-    est  = estimate(str(pdf_path), comp)
+    comp     = extract(str(pdf_path))
+    est      = estimate(str(pdf_path), comp)
+    vec_comp = extract_vectors(str(pdf_path))
+    vec_est  = _estimate_vector(vec_comp)
 
-    return {"png": png, "components": comp, "estimate": est}
+    return {
+        "png":              png,
+        "components":       comp,
+        "estimate":         est,
+        "components_vector": vec_comp,
+        "estimate_vector":  vec_est,
+    }
 
 
 # ── Pre-load all existing PDFs at startup ─────────────────────────────────────
@@ -93,12 +141,23 @@ def drawing_components(name: str):
         raise HTTPException(404, f"Drawing '{name}' not found")
     return JSONResponse(_cache[name]["components"], headers=NO_CACHE)
 
+@app.get("/drawing/{name}/components-vector")
+def drawing_components_vector(name: str):
+    if name not in _cache:
+        raise HTTPException(404, f"Drawing '{name}' not found")
+    return JSONResponse(_cache[name]["components_vector"], headers=NO_CACHE)
 
 @app.get("/drawing/{name}/estimate")
 def drawing_estimate(name: str):
     if name not in _cache:
         raise HTTPException(404, f"Drawing '{name}' not found")
     return JSONResponse(_cache[name]["estimate"], headers=NO_CACHE)
+
+@app.get("/drawing/{name}/estimate-vector")
+def drawing_estimate_vector(name: str):
+    if name not in _cache:
+        raise HTTPException(404, f"Drawing '{name}' not found")
+    return JSONResponse(_cache[name]["estimate_vector"], headers=NO_CACHE)
 
 
 @app.get("/", response_class=HTMLResponse)
