@@ -85,18 +85,20 @@ def drawing_image(name: str):
     return Response(_cache[name]["png"], media_type="image/png")
 
 
+NO_CACHE = {"Cache-Control": "no-store"}
+
 @app.get("/drawing/{name}/components")
 def drawing_components(name: str):
     if name not in _cache:
         raise HTTPException(404, f"Drawing '{name}' not found")
-    return JSONResponse(_cache[name]["components"])
+    return JSONResponse(_cache[name]["components"], headers=NO_CACHE)
 
 
 @app.get("/drawing/{name}/estimate")
 def drawing_estimate(name: str):
     if name not in _cache:
         raise HTTPException(404, f"Drawing '{name}' not found")
-    return JSONResponse(_cache[name]["estimate"])
+    return JSONResponse(_cache[name]["estimate"], headers=NO_CACHE)
 
 
 @app.get("/", response_class=HTMLResponse)
