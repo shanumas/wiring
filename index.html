@@ -86,19 +86,20 @@
     /* ── component overlays ── */
     .comp-overlay {
       position: absolute;
-      border: 1.5px solid transparent;
+      border: 1.5px solid var(--oc);
       border-radius: 1px;
-      cursor: crosshair;
-      transition: background 0.12s, border-color 0.12s;
+      background: var(--ob);
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s, outline 0.12s;
     }
     .comp-overlay:hover {
-      background: color-mix(in srgb, currentColor 12%, transparent) !important;
-      border-color: currentColor !important;
+      border-color: var(--oc-h) !important;
+      background:   var(--ob-h) !important;
     }
     .comp-overlay.active {
-      background: color-mix(in srgb, currentColor 18%, transparent) !important;
-      border-color: currentColor !important;
-      outline: 1px solid currentColor;
+      border-color: var(--oc-h) !important;
+      background:   var(--ob-h) !important;
+      outline: 2px solid var(--oc-h);
       outline-offset: 1px;
     }
 
@@ -575,11 +576,14 @@
       div.className = 'comp-overlay';
       div.dataset.id = c.id;
       div.style.cssText = `
-        left:   ${x0 * scaleX}px;
-        top:    ${y0 * scaleY}px;
-        width:  ${(x1 - x0) * scaleX}px;
-        height: ${(y1 - y0) * scaleY}px;
-        color:  ${c.color};
+        left:    ${x0 * scaleX}px;
+        top:     ${y0 * scaleY}px;
+        width:   ${(x1 - x0) * scaleX}px;
+        height:  ${(y1 - y0) * scaleY}px;
+        --oc:    ${c.color}55;
+        --ob:    ${c.color}12;
+        --oc-h:  ${c.color};
+        --ob-h:  ${c.color}30;
       `;
 
       div.addEventListener('mouseenter', e => showTooltip(e, c));
@@ -723,7 +727,7 @@
 
     // Toggle: if all already active, deselect all; otherwise select all
     const nextState = !allSame;
-    document.querySelectorAll('.comp-overlay, .comp-card').forEach(el => {
+    document.querySelectorAll('.comp-overlay').forEach(el => {
       el.classList.toggle('active', nextState && matches.includes(el.dataset.id));
     });
   }
@@ -732,7 +736,7 @@
   function selectComponent(id) {
     activeId = (activeId === id) ? null : id;
 
-    document.querySelectorAll('.comp-overlay, .comp-card').forEach(el => {
+    document.querySelectorAll('.comp-overlay').forEach(el => {
       el.classList.toggle('active', el.dataset.id === activeId);
     });
 
