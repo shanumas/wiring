@@ -17,7 +17,7 @@ import fitz
 from extract import extract
 from extract_vector import extract_vectors
 from estimate import estimate, COST_TABLE, COST_FALLBACK_PER_M
-from extract_ai import build_component_library, load_component_library, extract_with_ai
+from extract_ai import build_component_library, load_component_library, extract_with_ai, load_ai_cache, _ai_cache_path
 
 app    = FastAPI()
 PDF_DIR = Path("pdf")
@@ -29,6 +29,9 @@ _cache: dict = {}
 
 # ── Component library (built from description.pdf) ─────────────────────────────
 _component_library: dict | None = None
+
+# ── Tracks which drawings are currently being AI-extracted ─────────────────────
+_ai_running: set[str] = set()
 
 
 def _estimate_vector(vec_data: dict) -> dict:
@@ -122,7 +125,7 @@ def _estimate_ai(ai_comp: dict) -> dict:
 
 
 def _process(pdf_path: Path) -> dict:
-    """Render PNG + run extract + estimate for one PDF. Returns cache entry."""
+    """Render PNG + run text/vector extract. Never calls Claude — zero tokens."""
     doc  = fitz.open(str(pdf_path))
     page = doc[0]
     pix  = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
@@ -134,14 +137,9 @@ def _process(pdf_path: Path) -> dict:
     vec_comp = extract_vectors(str(pdf_path))
     vec_est  = _estimate_vector(vec_comp)
 
-    # AI extraction — may be slow; runs only if ANTHROPIC_API_KEY is set
-    ai_comp = None
-    ai_est  = None
-    try:
-        ai_comp = extract_with_ai(str(pdf_path), _component_library)
-        ai_est  = _estimate_ai(ai_comp)
-    except Exception as exc:
-        print(f"  [AI] extraction failed for {pdf_path.name}: {exc}")
+    # Load AI result from disk cache only — never call Claude here
+    ai_comp = load_ai_cache(str(pdf_path))
+    ai_est  = _estimate_ai(ai_comp) if ai_comp else None
 
     return {
         "png":               png,
@@ -152,6 +150,24 @@ def _process(pdf_path: Path) -> dict:
         "components_ai":     ai_comp,
         "estimate_ai":       ai_est,
     }
+
+
+def _run_ai(pdf_path: Path) -> None:
+    """Explicitly call Claude for one PDF and update the in-memory cache entry."""
+    name = pdf_path.name
+    _ai_running.add(name)
+    print(f"  [AI] running extraction for {name} …")
+    try:
+        ai_comp = extract_with_ai(str(pdf_path), _component_library)
+        ai_est  = _estimate_ai(ai_comp)
+        _cache[name]["components_ai"] = ai_comp
+        _cache[name]["estimate_ai"]   = ai_est
+        print(f"  [AI] done: {name}")
+    except Exception as exc:
+        print(f"  [AI] failed for {name}: {exc}")
+        raise
+    finally:
+        _ai_running.discard(name)
 
 
 # ── Pre-load component library and all existing PDFs at startup ───────────────
@@ -244,13 +260,32 @@ def drawing_estimate_vector(name: str):
         raise HTTPException(404, f"Drawing '{name}' not found")
     return JSONResponse(_cache[name]["estimate_vector"], headers=NO_CACHE)
 
+@app.post("/drawing/{name}/run-ai")
+def drawing_run_ai(name: str, force: bool = False):
+    """Explicitly trigger Claude AI extraction for one drawing. Costs tokens.
+    Pass ?force=true to delete existing cache and recompute from scratch."""
+    if name not in _cache:
+        raise HTTPException(404, f"Drawing '{name}' not found")
+    if force:
+        cache_file = _ai_cache_path(str(PDF_DIR / name))
+        if cache_file.exists():
+            cache_file.unlink()
+            print(f"  [AI] cache cleared for {name}")
+        _cache[name]["components_ai"] = None
+        _cache[name]["estimate_ai"]   = None
+    _run_ai(PDF_DIR / name)
+    return {"status": "ok", "name": name}
+
+
 @app.get("/drawing/{name}/components-ai")
 def drawing_components_ai(name: str):
     if name not in _cache:
         raise HTTPException(404, f"Drawing '{name}' not found")
+    if name in _ai_running:
+        raise HTTPException(202, "AI extraction in progress")
     data = _cache[name].get("components_ai")
     if data is None:
-        raise HTTPException(503, "AI extraction not available (check ANTHROPIC_API_KEY)")
+        raise HTTPException(503, "AI extraction not available — click Run AI")
     return JSONResponse(data, headers=NO_CACHE)
 
 @app.get("/drawing/{name}/estimate-ai")
@@ -277,4 +312,10 @@ def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run(
+        "server:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_excludes=["pdf/*", "ai_cache/*", "*.json", "__pycache__/*"],
+    )

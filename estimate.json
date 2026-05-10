@@ -1,21 +1,21 @@
 {
   "items": [
     {
-      "system": "4",
-      "name": "4-VÄGSUTTAG, 300 ÖFG",
+      "system": "W1",
+      "name": "W1",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
       "fire_rating": null,
-      "count": 20,
-      "horizontal_length_mm": 55220,
+      "count": 28,
+      "horizontal_length_mm": 137134,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 55220,
-      "total_length_m": 55.22,
+      "total_length_mm": 137134,
+      "total_length_m": 137.13,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 27610,
+      "total_cost_sek": 68567,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -23,21 +23,87 @@
       ]
     },
     {
-      "system": "FBA",
-      "name": "2-VÄGSUTTAG I FBK",
+      "system": "F1",
+      "name": "F1",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 14,
+      "horizontal_length_mm": 57464,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 57464,
+      "total_length_m": 57.46,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 28732,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "FH",
+      "name": "FRHF 3G2,5",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 10,
+      "horizontal_length_mm": 33528,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 33528,
+      "total_length_m": 33.53,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 16764,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "F2",
+      "name": "F2",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 7,
+      "horizontal_length_mm": 41677,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 41677,
+      "total_length_m": 41.68,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 20839,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "A",
+      "name": "A",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
       "fire_rating": null,
       "count": 6,
-      "horizontal_length_mm": 7505,
+      "horizontal_length_mm": 23781,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 7505,
-      "total_length_m": 7.51,
+      "total_length_mm": 23781,
+      "total_length_m": 23.78,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 3753,
+      "total_cost_sek": 11890,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -45,88 +111,22 @@
       ]
     },
     {
-      "system": "NS",
-      "name": "NS",
+      "system": "W1",
+      "name": "W1",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 4,
-      "horizontal_length_mm": 9391,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 9391,
-      "total_length_m": 9.39,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 4695,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "KO",
-      "name": "1-VÄGSUTTAG",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 3,
-      "horizontal_length_mm": 19810,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 19810,
-      "total_length_m": 19.81,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 9905,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "P",
-      "name": "2-VÄGSUTTAG FÖR PROJEKTOR, OVAN UNDERTAK",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 3,
-      "horizontal_length_mm": 11344,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 11344,
-      "total_length_m": 11.34,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 5672,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "DA",
-      "name": "DA",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 2,
-      "horizontal_length_mm": 6617,
+      "fire_rating": "EI 30-C",
+      "count": 6,
+      "horizontal_length_mm": 7051,
       "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 6617,
-      "total_length_m": 6.62,
+      "total_length_mm": 7051,
+      "total_length_m": 7.05,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 3309,
-      "confidence": 0.35,
+      "total_cost_sek": 3525,
+      "confidence": 0.45,
       "confidence_notes": [
         "width unknown (per drawing)",
         "mounting height unspecified",
@@ -134,21 +134,21 @@
       ]
     },
     {
-      "system": "NB",
-      "name": "NB",
+      "system": "D1",
+      "name": "D1",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
       "fire_rating": null,
-      "count": 2,
-      "horizontal_length_mm": 9391,
+      "count": 3,
+      "horizontal_length_mm": 41277,
       "length_source": "paths",
       "vertical_length_mm": 0,
-      "total_length_mm": 9391,
-      "total_length_m": 9.39,
+      "total_length_mm": 41277,
+      "total_length_m": 41.28,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 4695,
+      "total_cost_sek": 20638,
       "confidence": 0.5,
       "confidence_notes": [
         "width unknown (per drawing)",
@@ -156,44 +156,90 @@
       ]
     },
     {
-      "system": "S",
-      "name": "1-VÄGS STÄDUTTAG, 900 ÖFG",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 2,
-      "horizontal_length_mm": 31886,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 31886,
-      "total_length_m": 31.89,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 15943,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "3N/16A",
-      "name": "3-FAS UTTAG, 16A, 1500 ÖFG",
+      "system": "D2",
+      "name": "D2",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
       "fire_rating": "EI 30-C",
-      "count": 1,
-      "horizontal_length_mm": 537,
+      "count": 3,
+      "horizontal_length_mm": 4052,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 4052,
+      "total_length_m": 4.05,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 2026,
+      "confidence": 0.6,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "F2",
+      "name": "F2",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": "EI 30-C",
+      "count": 3,
+      "horizontal_length_mm": 0,
+      "length_source": "heuristic",
+      "vertical_length_mm": 0,
+      "total_length_mm": 0,
+      "total_length_m": 0.0,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 0,
+      "confidence": 0.35,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified",
+        "length estimated from height data only",
+        "fire rating associated by x-band proximity"
+      ]
+    },
+    {
+      "system": "F5",
+      "name": "F5",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 3,
+      "horizontal_length_mm": 8102,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 8102,
+      "total_length_m": 8.1,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 4051,
+      "confidence": 0.5,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "FH",
+      "name": "FRHF 3G2,5",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": "EI 30-C",
+      "count": 2,
+      "horizontal_length_mm": 7210,
       "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 537,
-      "total_length_m": 0.54,
+      "total_length_mm": 7210,
+      "total_length_m": 7.21,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 269,
-      "confidence": 0.4,
+      "total_cost_sek": 3605,
+      "confidence": 0.45,
       "confidence_notes": [
         "width unknown (per drawing)",
         "mounting height unspecified",
@@ -203,29 +249,6 @@
     {
       "system": "B",
       "name": "B",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 1,
-      "horizontal_length_mm": 443,
-      "length_source": "annotation_span",
-      "vertical_length_mm": 0,
-      "total_length_mm": 443,
-      "total_length_m": 0.44,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 222,
-      "confidence": 0.3,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified",
-        "length lower-bound from annotation positions"
-      ]
-    },
-    {
-      "system": "D",
-      "name": "2-VÄGS UTTAG I ELNISCH, 1200 ÖFG",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
@@ -247,22 +270,22 @@
       ]
     },
     {
-      "system": "HL",
-      "name": "SE HUVUDLEDNINGSSCHEMA",
+      "system": "D",
+      "name": "D",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
-      "fire_rating": null,
+      "fire_rating": "EI 30-C",
       "count": 1,
-      "horizontal_length_mm": 443,
+      "horizontal_length_mm": 194,
       "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 443,
-      "total_length_m": 0.44,
+      "total_length_mm": 194,
+      "total_length_m": 0.19,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 222,
-      "confidence": 0.3,
+      "total_cost_sek": 97,
+      "confidence": 0.4,
       "confidence_notes": [
         "width unknown (per drawing)",
         "mounting height unspecified",
@@ -270,22 +293,90 @@
       ]
     },
     {
-      "system": "S",
-      "name": "1-VÄGS STÄDUTTAG, 900 ÖFG",
+      "system": "D4",
+      "name": "D4",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 1,
+      "horizontal_length_mm": 14859,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 14859,
+      "total_length_m": 14.86,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 7430,
+      "confidence": 0.45,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "D5",
+      "name": "D5",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 1,
+      "horizontal_length_mm": 9320,
+      "length_source": "paths",
+      "vertical_length_mm": 0,
+      "total_length_mm": 9320,
+      "total_length_m": 9.32,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 4660,
+      "confidence": 0.45,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified"
+      ]
+    },
+    {
+      "system": "F1",
+      "name": "F1",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
       "fire_rating": "EI 30-C",
       "count": 1,
-      "horizontal_length_mm": 1506,
+      "horizontal_length_mm": 0,
+      "length_source": "heuristic",
+      "vertical_length_mm": 0,
+      "total_length_mm": 0,
+      "total_length_m": 0.0,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 0,
+      "confidence": 0.3,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified",
+        "length estimated from height data only",
+        "fire rating associated by x-band proximity"
+      ]
+    },
+    {
+      "system": "W2",
+      "name": "W2",
+      "orientation": "horizontal",
+      "width_mm": null,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": 1,
+      "horizontal_length_mm": 951,
       "length_source": "annotation_span",
       "vertical_length_mm": 0,
-      "total_length_mm": 1506,
-      "total_length_m": 1.51,
+      "total_length_mm": 951,
+      "total_length_m": 0.95,
       "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 753,
-      "confidence": 0.4,
+      "total_cost_sek": 476,
+      "confidence": 0.3,
       "confidence_notes": [
         "width unknown (per drawing)",
         "mounting height unspecified",
@@ -294,57 +385,61 @@
     }
   ],
   "totals": {
-    "total_cost_sek": 77145,
-    "total_length_m": 154.29,
+    "total_cost_sek": 193397,
+    "total_length_m": 386.78,
     "scale_mm_per_pt": 17.6389,
     "by_system": {
-      "4": {
-        "total_length_m": 55.22,
-        "total_cost_sek": 27610
+      "W1": {
+        "total_length_m": 144.18,
+        "total_cost_sek": 72092
       },
-      "FBA": {
-        "total_length_m": 7.51,
-        "total_cost_sek": 3753
+      "F1": {
+        "total_length_m": 57.46,
+        "total_cost_sek": 28732
       },
-      "NS": {
-        "total_length_m": 9.39,
-        "total_cost_sek": 4695
+      "FH": {
+        "total_length_m": 40.74,
+        "total_cost_sek": 20369
       },
-      "KO": {
-        "total_length_m": 19.81,
-        "total_cost_sek": 9905
+      "F2": {
+        "total_length_m": 41.68,
+        "total_cost_sek": 20839
       },
-      "P": {
-        "total_length_m": 11.34,
-        "total_cost_sek": 5672
+      "A": {
+        "total_length_m": 23.78,
+        "total_cost_sek": 11890
       },
-      "DA": {
-        "total_length_m": 6.62,
-        "total_cost_sek": 3309
+      "D1": {
+        "total_length_m": 41.28,
+        "total_cost_sek": 20638
       },
-      "NB": {
-        "total_length_m": 9.39,
-        "total_cost_sek": 4695
+      "D2": {
+        "total_length_m": 4.05,
+        "total_cost_sek": 2026
       },
-      "S": {
-        "total_length_m": 33.4,
-        "total_cost_sek": 16696
-      },
-      "3N/16A": {
-        "total_length_m": 0.54,
-        "total_cost_sek": 269
+      "F5": {
+        "total_length_m": 8.1,
+        "total_cost_sek": 4051
       },
       "B": {
-        "total_length_m": 0.44,
-        "total_cost_sek": 222
+        "total_length_m": 0.19,
+        "total_cost_sek": 97
       },
       "D": {
         "total_length_m": 0.19,
         "total_cost_sek": 97
       },
-      "HL": {
-        "total_length_m": 0.44,
-        "total_cost_sek": 222
+      "D4": {
+        "total_length_m": 14.86,
+        "total_cost_sek": 7430
+      },
+      "D5": {
+        "total_length_m": 9.32,
+        "total_cost_sek": 4660
+      },
+      "W2": {
+        "total_length_m": 0.95,
+        "total_cost_sek": 476
       }
     }
   }

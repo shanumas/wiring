@@ -20,6 +20,7 @@ Stage 2 — Drawing takeoff (run once per drawing PDF)
 
 import anthropic
 import base64
+import hashlib
 import json
 import re
 import fitz
@@ -27,11 +28,37 @@ from pathlib import Path
 
 _CLIENT = None   # lazy-init so import doesn't fail when key is absent
 
+AI_CACHE_DIR = Path("ai_cache")
+AI_CACHE_DIR.mkdir(exist_ok=True)
+
 def _client():
     global _CLIENT
     if _CLIENT is None:
         _CLIENT = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY from env
     return _CLIENT
+
+
+def _pdf_hash(pdf_path: str) -> str:
+    """SHA-1 of the PDF file contents — used as cache key."""
+    h = hashlib.sha1(Path(pdf_path).read_bytes()).hexdigest()
+    return h
+
+
+def _ai_cache_path(pdf_path: str) -> Path:
+    return AI_CACHE_DIR / f"{Path(pdf_path).stem}_{_pdf_hash(pdf_path)[:12]}.json"
+
+
+def load_ai_cache(pdf_path: str) -> dict | None:
+    """Return cached AI extraction result for this PDF, or None."""
+    p = _ai_cache_path(pdf_path)
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return None
+
+
+def save_ai_cache(pdf_path: str, result: dict) -> None:
+    p = _ai_cache_path(pdf_path)
+    p.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 
 
 # ── PDF → base64 PNG ──────────────────────────────────────────────────────────
@@ -171,6 +198,31 @@ def _tile_b64(pdf_path: str, page_num: int, row: int, col: int,
     return data
 
 
+def _tile_b64_offset(pdf_path: str, page_num: int, row: int, col: int,
+                     rows: int, cols: int, offset_x: float, offset_y: float,
+                     max_px: int = 2400) -> str:
+    """
+    Same as _tile_b64 but the grid is shifted by (offset_x, offset_y) as a
+    fraction of the tile size — so cut lines fall at different positions than
+    the standard grid, avoiding the same boundary symbols.
+    """
+    doc  = fitz.open(pdf_path)
+    page = doc[page_num]
+    w, h = page.rect.width, page.rect.height
+    tw, th = w / cols, h / rows
+    x0 = (col * tw + offset_x * tw) % w
+    y0 = (row * th + offset_y * th) % h
+    x1 = min(x0 + tw, w)
+    y1 = min(y0 + th, h)
+    clip    = fitz.Rect(x0, y0, x1, y1)
+    longest = max(clip.width, clip.height)
+    scale   = min(max_px / longest, 3.0)
+    pix     = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip)
+    data    = base64.standard_b64encode(pix.tobytes("png")).decode()
+    doc.close()
+    return data
+
+
 def _ask_full_drawing(b64: str, lib_block: str) -> dict:
     """
     Pass 1 — full drawing at once.
@@ -197,7 +249,9 @@ Instructions:
 5. Capture mounting heights (ÖK = top of tray, UK = bottom, in mm ÖFG).
 6. Note fire ratings (e.g. "EI 30-C") if shown alongside a component.
 
-Return ONLY valid JSON — no markdown, no explanation:
+YOUR RESPONSE MUST BE A RAW JSON OBJECT WITH NO TEXT BEFORE OR AFTER IT.
+No markdown fences, no explanation, no commentary. The very first character must be {{ and the last must be }}.
+
 {{
   "scale": "1:50",
   "drawing_type": "one-line description of what this drawing shows",
@@ -223,10 +277,7 @@ Return ONLY valid JSON — no markdown, no explanation:
 
 
 def _count_in_tile(b64: str, codes: list[dict]) -> dict[str, int]:
-    """
-    Pass 2 — count specific symbols in one tile.
-    Returns {code: count} for each requested code.
-    """
+    """Count specific symbols in one tile. Returns {code: count}."""
     codes_desc = "\n".join(
         f'  "{c["code"]}": {c["name"]}' for c in codes
     )
@@ -238,11 +289,13 @@ Count ONLY these specific symbols:
 Rules:
 - Count every visible instance of each symbol in this image tile.
 - Do NOT count the same symbol twice.
-- If a symbol is partially cut off at the edge, count it only if more than half is visible.
+- IMPORTANT: If a symbol is partially cut off at any edge of the image, do NOT count it.
+  Only count symbols that are fully visible within the tile boundary.
 - If you see 0 of a symbol, return 0 — do not omit it.
 
-Return ONLY valid JSON, no other text:
-{{{{"P11": 3, "DA": 1, ...}}}}"""
+IMPORTANT: Your entire response must be a single JSON object with no text before or after it.
+Do not write any explanation. Do not use markdown. Just output the raw JSON object.
+{{{{"P11": 3, "DA": 1, "P12": 0}}}}"""
 
     resp = _client().messages.create(
         model="claude-sonnet-4-6",
@@ -253,7 +306,35 @@ Return ONLY valid JSON, no other text:
         ]}],
     )
     result = _extract_json(resp.content[0].text)
-    # Ensure all requested codes are present
+    return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
+
+
+def _count_full_image(b64: str, codes: list[dict]) -> dict[str, int]:
+    """Count symbols on the full drawing image — no tile cuts, simple total count."""
+    codes_desc = "\n".join(f'  "{c["code"]}": {c["name"]}' for c in codes)
+    prompt = f"""You are counting electrical/building-services symbols in a floor plan drawing.
+
+Count ONLY these symbols, found in the FLOOR PLAN area:
+{codes_desc}
+
+Rules:
+- Count only symbols placed in the plan. Ignore the legend, title block, and schedules.
+- Do not count the same instance twice.
+- If unsure whether something is the symbol or not, do not count it.
+
+IMPORTANT: Your entire response must be a single JSON object, nothing else.
+No markdown, no explanation. Raw JSON only.
+{{{{"P11": 27, "DA": 3}}}}"""
+
+    resp = _client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=256,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    result = _extract_json(resp.content[0].text)
     return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
 
 
@@ -263,8 +344,14 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
       Pass 1 — full drawing → identify all components, measure lengths, get rough counts.
       Pass 2 — tile each count-type component through a 2×2 grid → sum tile counts.
 
+    Results are cached to ai_cache/ by PDF hash so hot-reloads skip Claude calls.
     Returns a dict in the same top-level schema as extract().
     """
+    cached = load_ai_cache(drawing_pdf_path)
+    if cached is not None:
+        print(f"  [AI] loaded from cache: {Path(drawing_pdf_path).name}")
+        return cached
+
     doc    = fitz.open(drawing_pdf_path)
     page   = doc[0]
     page_w = page.rect.width
@@ -293,25 +380,49 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     length_items = [c for c in raw.get("components", [])
                     if c.get("measurement_type", "count") != "count"]
 
-    # ── Pass 2: tile counting for count-type components ────────────────────────
+    # ── Passes A/B/C — three independent full-image counts (no tiling) ─────────
+    # Tiling always double-counts symbols on cut lines.
+    # Three separate full-image calls give majority-vote without boundary errors.
     if count_items:
-        ROWS, COLS = 2, 2
-        tile_totals: dict[str, int] = {c["code"]: 0 for c in count_items}
+        pdf_stem = Path(drawing_pdf_path).stem
+        print(f"\n  [AI] Counting (3 × full-image) for {pdf_stem}:")
+        grid_a = _count_full_image(full_b64, count_items)
+        print(f"  Pass A: { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
+        grid_b = _count_full_image(full_b64, count_items)
+        print(f"  Pass B: { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
+        grid_c = _count_full_image(full_b64, count_items)
+        print(f"  Pass C: { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
 
-        for row in range(ROWS):
-            for col in range(COLS):
-                tile_b64 = _tile_b64(drawing_pdf_path, 0, row, col, ROWS, COLS, max_px=2400)
-                tile_counts = _count_in_tile(tile_b64, count_items)
-                for code, n in tile_counts.items():
-                    tile_totals[code] = tile_totals.get(code, 0) + n
-
-        # Replace quantities in count_items with tiled totals
+        print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result")
         for item in count_items:
-            item["quantity"] = tile_totals.get(item["code"], item.get("quantity", 0))
+            code = item["code"]
+            a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
+
+            if a == b == c:
+                final, confidence = a, "high"
+            elif a == b:
+                final, confidence = a, "medium"
+            elif a == c:
+                final, confidence = a, "medium"
+            elif b == c:
+                final, confidence = b, "medium"
+            else:
+                # All three differ — trust Pass B (most methodical enumeration)
+                final, confidence = b, "low"
+
+            item["count_grid_a"]     = a
+            item["count_grid_b"]     = b
+            item["count_grid_c"]     = c
+            item["count_confidence"] = confidence
+            item["quantity"]         = final
+            icon = {"high": "✓", "medium": "⚠", "low": "✗"}[confidence]
+            print(f"  {code:<12} {a:>4} {b:>4} {c:>4}  {final} {icon}")
 
     # Reassemble components list
     raw["components"] = count_items + length_items
-    return _normalise(raw, page_w, page_h)
+    result = _normalise(raw, page_w, page_h)
+    save_ai_cache(drawing_pdf_path, result)
+    return result
 
 
 # ── Schema normalisation ──────────────────────────────────────────────────────
@@ -387,6 +498,12 @@ def _normalise(raw: dict, page_w: float, page_h: float) -> dict:
             s["total_length_m"] = qty
         else:
             s["count"] = max(0, int(round(qty)))
+            # Propagate per-grid validator counts so the UI can display them
+            if "count_grid_a" in item:
+                s["count_grid_a"]    = item["count_grid_a"]
+                s["count_grid_b"]    = item["count_grid_b"]
+                s["count_grid_c"]    = item["count_grid_c"]
+                s["count_confidence"] = item.get("count_confidence", "unknown")
         summary.append(s)
 
     return {

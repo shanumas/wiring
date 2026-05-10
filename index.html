@@ -152,6 +152,23 @@
     }
     .sidebar-panel { display: none; overflow-y: auto; }
     .sidebar-panel.active { display: block; }
+    #recompute-btn {
+      display: none;
+      margin-left: auto;
+      margin-right: 6px;
+      align-self: center;
+      background: none;
+      border: 1px solid #c0c8d8;
+      border-radius: 3px;
+      color: #4a6296;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #recompute-btn:hover { background: #eef2f8; }
+    #recompute-btn:disabled { color: #aaa; cursor: default; }
 
     #sidebar {
       flex: 0 0 300px;
@@ -220,6 +237,39 @@
       color: #888888;
       margin-top: 2px;
       line-height: 1.4;
+    }
+    .comp-validators {
+      font-size: 10px;
+      font-family: monospace;
+      margin-top: 3px;
+      letter-spacing: 0.3px;
+      padding: 1px 4px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+    .qty-edit {
+      width: 44px;
+      text-align: right;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      background: transparent;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      color: inherit;
+      padding: 1px 3px;
+      cursor: default;
+    }
+    .qty-edit:focus {
+      outline: none;
+      border-color: #4a6296;
+      background: #ffffff;
+      cursor: text;
+    }
+    .qty-edit.edited {
+      color: #1a5c8a;
+      border-color: #1a5c8a;
+      background: #eef4fb;
     }
     .comp-fire {
       color: #9c2c2c;
@@ -493,9 +543,9 @@
       <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
     </div>
     <div class="mode-toggle">
-      <button class="mode-btn active" data-mode="text">Text</button>
+      <button class="mode-btn"        data-mode="text">Text</button>
       <button class="mode-btn"        data-mode="vector">Vector</button>
-      <button class="mode-btn"        data-mode="ai">AI</button>
+      <button class="mode-btn active" data-mode="ai">AI</button>
     </div>
     <button id="rotate-btn" title="Rotate 90°">↻</button>
     <span id="upload-status"></span>
@@ -528,6 +578,7 @@
     <div class="sidebar-tabs">
       <div class="sidebar-tab active" data-panel="comp-panel">Components</div>
       <div class="sidebar-tab"        data-panel="est-panel">Estimate</div>
+      <button id="recompute-btn" title="Recompute AI extraction (uses tokens)">↻ Recompute</button>
     </div>
     <div id="comp-panel" class="sidebar-panel active">
       <div id="comp-list"></div>
@@ -547,7 +598,7 @@
   let activeId = null;
   let currentDrawing = null;
   let currentDrawingType = 'unknown';
-  let extractionMode = 'text';   // 'text' | 'vector' | 'ai'
+  let extractionMode = 'ai';   // 'text' | 'vector' | 'ai'
 
   // ── drawing list + selector ────────────────────────────────────────────────
   async function loadDrawingList() {
@@ -589,17 +640,38 @@
       ? `/drawing/${encodeURIComponent(name)}/estimate-ai`
       : `/drawing/${encodeURIComponent(name)}/estimate`;
 
+    // For AI mode: check first — show Run AI button if no result yet
+    if (extractionMode === 'ai') {
+      const check = await fetch(compUrl);
+      if (check.status === 202) {
+        showRunAIProgress(name);   // still running — poll
+        return;
+      }
+      if (!check.ok) {
+        showRunAIPrompt(name);
+        return;
+      }
+      const [compData, estData] = await Promise.all([
+        check.json(),
+        fetch(estUrl).then(r => r.json()),
+      ]);
+      _applyDrawingData(compData, estData);
+      return;
+    }
+
     const [compData, estData] = await Promise.all([
       fetch(compUrl).then(r => r.json()),
       fetch(estUrl).then(r => r.json()),
     ]);
+    _applyDrawingData(compData, estData);
+  }
 
-    components          = compData.components;
-    summary             = compData.summary;
-    pageW               = compData.page_width;
-    pageH               = compData.page_height;
-    currentDrawingType  = compData.drawing_type || 'unknown';
-
+  function _applyDrawingData(compData, estData) {
+    components         = compData.components || [];
+    summary            = compData.summary    || [];
+    pageW              = compData.page_width  || 1;
+    pageH              = compData.page_height || 1;
+    currentDrawingType = compData.drawing_type || 'unknown';
     activeId = null;
     displayRotation = 0;
     document.getElementById('image-wrap').style.transform = '';
@@ -607,6 +679,84 @@
     buildOverlays();
     rebuildSidebar();
     rebuildEstimate(estData);
+    // Show recompute button only in AI mode when results are loaded
+    document.getElementById('recompute-btn').style.display =
+      extractionMode === 'ai' ? 'block' : 'none';
+  }
+
+  document.getElementById('recompute-btn').addEventListener('click', async () => {
+    if (!currentDrawing) return;
+    const btn = document.getElementById('recompute-btn');
+    btn.textContent = '↻ Running…';
+    btn.disabled = true;
+    try {
+      const res = await fetch(
+        `/drawing/${encodeURIComponent(currentDrawing)}/run-ai?force=true`,
+        { method: 'POST' }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const prev = currentDrawing;
+      currentDrawing = null;   // force reload
+      await switchDrawing(prev);
+    } catch (err) {
+      btn.textContent = '✗ Failed';
+      btn.disabled = false;
+      setTimeout(() => { btn.textContent = '↻ Recompute'; btn.disabled = false; }, 3000);
+    }
+  });
+
+  function showRunAIPrompt(name) {
+    // Show a "Run AI" button in the sidebar instead of component list
+    const list = document.getElementById('comp-list');
+    list.innerHTML = `
+      <div style="padding:32px 16px;text-align:center">
+        <div style="font-size:13px;font-weight:600;color:#444;margin-bottom:8px">
+          No AI result for this drawing
+        </div>
+        <div style="font-size:11px;color:#888;margin-bottom:16px;line-height:1.6">
+          Click below to run Claude Vision extraction.<br>This will use API tokens.
+        </div>
+        <button id="run-ai-btn" style="
+          background:#1c2b4a;color:#fff;border:none;border-radius:4px;
+          padding:8px 20px;font-size:12px;font-weight:600;cursor:pointer">
+          ▶ Run AI Extraction
+        </button>
+      </div>`;
+    document.getElementById('run-ai-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('run-ai-btn');
+      btn.textContent = 'Running…';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/drawing/${encodeURIComponent(name)}/run-ai`, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        // Reload the drawing in AI mode now that the result exists
+        currentDrawing = null;
+        await switchDrawing(name);
+      } catch (err) {
+        btn.textContent = '✗ Failed — check terminal';
+        btn.disabled = false;
+      }
+    });
+    document.getElementById('est-list').innerHTML = '';
+  }
+
+  function showRunAIProgress(name) {
+    const list = document.getElementById('comp-list');
+    list.innerHTML = `
+      <div style="padding:32px 16px;text-align:center">
+        <div style="font-size:13px;font-weight:600;color:#1a5c8a;margin-bottom:8px">
+          AI extraction in progress…
+        </div>
+        <div style="font-size:11px;color:#888;line-height:1.6">
+          Claude is analysing the drawing.<br>This page will refresh automatically.
+        </div>
+      </div>`;
+    document.getElementById('est-list').innerHTML = '';
+    // Poll every 5 seconds until result is ready
+    setTimeout(async () => {
+      currentDrawing = null;
+      await switchDrawing(name);
+    }, 5000);
   }
 
   // ── file upload ────────────────────────────────────────────────────────────
@@ -720,6 +870,8 @@
       extractionMode = btn.dataset.mode;
       document.querySelectorAll('.mode-btn').forEach(b =>
         b.classList.toggle('active', b.dataset.mode === extractionMode));
+      document.getElementById('recompute-btn').style.display =
+        extractionMode === 'ai' ? 'block' : 'none';
       // Re-fetch current drawing in new mode
       if (currentDrawing) {
         const prev = currentDrawing;
@@ -810,7 +962,13 @@
       return;
     }
 
-    const drawnSummary  = summary.filter(s => typeof s.count === 'number');
+    const drawnSummary  = summary.filter(s => typeof s.count === 'number')
+      .filter(s => {
+        // Hide zero-quantity items in AI mode
+        if (extractionMode !== 'ai') return true;
+        const qty = s.measurement_type === 'length' ? (s.total_length_m ?? 0) : (s.count ?? 0);
+        return qty > 0;
+      });
     const legendSummary = summary.filter(s => typeof s.count !== 'number');
     const col = s => COLOR[s.system] || "#555555";
 
@@ -838,17 +996,56 @@
       const hStr     = hParts.length ? hParts.join(' · ') + ' mm ÖFG' : '';
       const details  = [sizeStr, vertStr, hStr, fireStr].filter(Boolean).join(' &nbsp;·&nbsp; ');
 
+      // Validator breakdown for AI count items
+      let validatorHtml = '';
+      if (extractionMode === 'ai' && s.count_grid_a != null) {
+        const conf = s.count_confidence || 'unknown';
+        const isHigh   = conf === 'high';
+        const isMedium = conf === 'medium';
+        const isLow    = conf === 'low';
+        const icon       = isHigh ? '✓' : isMedium ? '⚠' : '✗';
+        const confColor  = isHigh ? '#2a7a3a' : isMedium ? '#8a6200' : '#9c2c2c';
+        const manualNote = isLow
+          ? `<span style="font-weight:600"> — needs manual check</span>` : '';
+        validatorHtml = `<div class="comp-validators" style="color:${confColor}">
+          ${icon} A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}${manualNote}
+        </div>`;
+      }
+
+      const isLengthItem = (extractionMode === 'vector' || extractionMode === 'ai') && s.total_length_m != null;
+      const qtyDisplay   = isLengthItem
+        ? s.total_length_m.toFixed(1) + ' m'
+        : s.count;
+      const qtyUnit      = isLengthItem ? '' : ' pcs';
+
       row.innerHTML = `
         <div class="comp-code">${s.system}</div>
         <div>
           <div class="comp-name">${s.name}</div>
           ${details ? `<div class="comp-detail">${details}</div>` : ''}
+          ${validatorHtml}
         </div>
-        <div class="comp-qty">${
-          (extractionMode === 'vector' || extractionMode === 'ai') && s.total_length_m != null
-            ? s.total_length_m.toFixed(1) + ' m'
-            : s.count + (s.measurement_type === 'count' ? ' pcs' : '')
-        }</div>`;
+        <div class="comp-qty" style="display:flex;align-items:center;gap:2px">
+          ${extractionMode === 'ai' && !isLengthItem
+            ? `<input class="qty-edit" type="number" min="0" value="${s.count}"
+                 title="Click to edit count" /><span style="font-size:11px">pcs</span>`
+            : `${qtyDisplay}${qtyUnit}`
+          }
+        </div>`;
+
+      // Make editable input not bubble row-click; mark edited value
+      if (extractionMode === 'ai' && !isLengthItem) {
+        const input = row.querySelector('.qty-edit');
+        input.addEventListener('click', e => e.stopPropagation());
+        const aiCount = s.count;   // original AI value before any edits
+        input.addEventListener('change', () => {
+          const newVal = Math.max(0, parseInt(input.value) || 0);
+          input.value  = newVal;
+          s.count      = newVal;
+          input.classList.toggle('edited', newVal !== aiCount);
+        });
+        input.addEventListener('focus', () => input.select());
+      }
 
       row.addEventListener('click', () => {
         list.querySelectorAll('.comp-row').forEach(r => r.classList.remove('active'));
@@ -1043,9 +1240,12 @@
 
     const t     = data.totals;
     const isAI  = extractionMode === 'ai';
-    // For AI mode show all items; otherwise only length items with count
+    // For AI mode show all items (except zeros); otherwise only length items with count
     const items = isAI
-      ? data.items
+      ? data.items.filter(i => {
+          const qty = i.measurement_type === 'length' ? (i.total_length_m ?? 0) : (i.count ?? 0);
+          return qty > 0;
+        })
       : data.items.filter(i => typeof i.count === 'number');
 
     const table = document.createElement('table');
