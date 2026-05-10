@@ -495,6 +495,7 @@
     <div class="mode-toggle">
       <button class="mode-btn active" data-mode="text">Text</button>
       <button class="mode-btn"        data-mode="vector">Vector</button>
+      <button class="mode-btn"        data-mode="ai">AI</button>
     </div>
     <button id="rotate-btn" title="Rotate 90°">↻</button>
     <span id="upload-status"></span>
@@ -546,7 +547,7 @@
   let activeId = null;
   let currentDrawing = null;
   let currentDrawingType = 'unknown';
-  let extractionMode = 'text';   // 'text' | 'vector'
+  let extractionMode = 'text';   // 'text' | 'vector' | 'ai'
 
   // ── drawing list + selector ────────────────────────────────────────────────
   async function loadDrawingList() {
@@ -579,9 +580,13 @@
     // Fetch components + estimate in parallel (mode-aware)
     const compUrl = extractionMode === 'vector'
       ? `/drawing/${encodeURIComponent(name)}/components-vector`
+      : extractionMode === 'ai'
+      ? `/drawing/${encodeURIComponent(name)}/components-ai`
       : `/drawing/${encodeURIComponent(name)}/components`;
     const estUrl  = extractionMode === 'vector'
       ? `/drawing/${encodeURIComponent(name)}/estimate-vector`
+      : extractionMode === 'ai'
+      ? `/drawing/${encodeURIComponent(name)}/estimate-ai`
       : `/drawing/${encodeURIComponent(name)}/estimate`;
 
     const [compData, estData] = await Promise.all([
@@ -625,8 +630,11 @@
         status.textContent = data.errors.map(e => e.error).join(', ');
       } else {
         status.className = 'done';
-        status.textContent = `✓ ${data.loaded.length} loaded`;
-        setTimeout(() => { status.textContent = ''; status.className = ''; }, 3000);
+        const msgs = [];
+        if (data.library_built) msgs.push('✓ Component library built');
+        if (data.loaded.length) msgs.push(`✓ ${data.loaded.length} drawing(s) loaded`);
+        status.textContent = msgs.join(' · ') || '✓ Done';
+        setTimeout(() => { status.textContent = ''; status.className = ''; }, 4000);
       }
 
       // Refresh selector and switch to first newly loaded drawing
@@ -809,7 +817,7 @@
     // ── Table header ──────────────────────────────────────────────────────
     const head = document.createElement('div');
     head.className = 'tbl-head';
-    const qtyLabel = extractionMode === 'vector' ? 'Length' : 'Qty';
+    const qtyLabel = (extractionMode === 'vector' || extractionMode === 'ai') ? 'Qty / Length' : 'Qty';
     head.innerHTML = `<span>Code</span><span>Description</span><span class="num">${qtyLabel}</span>`;
     list.appendChild(head);
 
@@ -836,8 +844,11 @@
           <div class="comp-name">${s.name}</div>
           ${details ? `<div class="comp-detail">${details}</div>` : ''}
         </div>
-        <div class="comp-qty">${extractionMode === 'vector' && s.total_length_m != null
-          ? s.total_length_m + ' m' : s.count}</div>`;
+        <div class="comp-qty">${
+          (extractionMode === 'vector' || extractionMode === 'ai') && s.total_length_m != null
+            ? s.total_length_m.toFixed(1) + ' m'
+            : s.count + (s.measurement_type === 'count' ? ' pcs' : '')
+        }</div>`;
 
       row.addEventListener('click', () => {
         list.querySelectorAll('.comp-row').forEach(r => r.classList.remove('active'));
@@ -1031,28 +1042,54 @@
     }
 
     const t     = data.totals;
-    const items = data.items.filter(i => typeof i.count === 'number');
+    const isAI  = extractionMode === 'ai';
+    // For AI mode show all items; otherwise only length items with count
+    const items = isAI
+      ? data.items
+      : data.items.filter(i => typeof i.count === 'number');
 
     const table = document.createElement('table');
     table.className = 'est-table';
-    table.innerHTML = `
-      <thead>
-        <tr>
-          <th>System</th>
-          <th class="num">Length</th>
-          <th class="num">SEK/m</th>
-          <th class="num">SEK</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-      <tfoot>
-        <tr>
-          <td>Total</td>
-          <td class="num">${t.total_length_m} m</td>
-          <td></td>
-          <td class="num est-total-cost">${t.total_cost_sek.toLocaleString()}</td>
-        </tr>
-      </tfoot>`;
+
+    if (isAI) {
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th class="num">Qty / Length</th>
+            <th class="num">SEK/m</th>
+            <th class="num">SEK</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr>
+            <td>Total (length-based)</td>
+            <td class="num">${t.total_length_m} m</td>
+            <td></td>
+            <td class="num est-total-cost">${t.total_cost_sek.toLocaleString()}</td>
+          </tr>
+        </tfoot>`;
+    } else {
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>System</th>
+            <th class="num">Length</th>
+            <th class="num">SEK/m</th>
+            <th class="num">SEK</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td class="num">${t.total_length_m} m</td>
+            <td></td>
+            <td class="num est-total-cost">${t.total_cost_sek.toLocaleString()}</td>
+          </tr>
+        </tfoot>`;
+    }
 
     const tbody = table.querySelector('tbody');
     items.forEach(item => {
@@ -1062,6 +1099,18 @@
       const vertStr = item.orientation === 'vertical' ? ' V' : '';
       const fire    = item.fire_rating
         ? `<span class="est-fire">${item.fire_rating}</span>` : '';
+      const mtype   = item.measurement_type || 'length';
+
+      const qtyCell = mtype === 'length'
+        ? `${(item.total_length_m ?? 0).toFixed(1)} m`
+        : `${item.count ?? 0} pcs`;
+      const costCell = item.total_cost_sek != null
+        ? item.total_cost_sek.toLocaleString()
+        : '—';
+      const rateCell = item.unit_cost_sek_per_m != null
+        ? item.unit_cost_sek_per_m
+        : '—';
+
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
       tr.dataset.vkey = variantKey(item);
@@ -1069,10 +1118,11 @@
         <td>
           <span class="est-sys" style="color:${c}">${item.system}${sizeStr}${vertStr}</span>
           ${fire}
+          ${isAI && item.name ? `<span style="font-size:10px;color:#888;margin-left:4px">${item.name}</span>` : ''}
         </td>
-        <td class="num">${item.total_length_m} m</td>
-        <td class="num" style="color:#666666">${item.unit_cost_sek_per_m}</td>
-        <td class="num" style="font-weight:600">${item.total_cost_sek.toLocaleString()}</td>`;
+        <td class="num">${qtyCell}</td>
+        <td class="num" style="color:#666666">${rateCell}</td>
+        <td class="num" style="font-weight:600">${costCell}</td>`;
       tr.addEventListener('click', () => {
         tbody.querySelectorAll('tr').forEach(r => r.style.background = '');
         tr.style.background = '#eef2f8';
@@ -1084,7 +1134,9 @@
 
     const note = document.createElement('div');
     note.className = 'est-note';
-    note.textContent = 'Excl. VAT · Indicative rates';
+    note.textContent = isAI
+      ? 'AI vision estimate · Excl. VAT · Indicative rates'
+      : 'Excl. VAT · Indicative rates';
     list.appendChild(note);
   }
 </script>
