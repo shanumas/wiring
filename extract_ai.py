@@ -236,10 +236,13 @@ def _ask_full_drawing(b64: str, lib_block: str) -> dict:
 Analyse this drawing image and return a full quantity takeoff.
 
 Instructions:
-1. Identify EVERY component visible — read codes from text annotations, symbol
-   labels, and any legend shown in the drawing itself.
+1. Identify EVERY component code present — read codes from annotations and symbol
+   labels in the floor plan. Use the legend / förklaringar box only to understand
+   what each code means — do NOT count symbols shown inside the legend box itself.
 2. For each code, check the component library above:
-   • measurement_type "count"  → count all visible instances.
+   • measurement_type "count"  → count all instances placed in the floor plan
+     (rooms, corridors, shafts). Exclude any instance inside the legend /
+     förklaringar table, title block, or revision table.
    • measurement_type "length" → estimate TOTAL run length in metres using the
      scale printed in the title block (e.g. "SKALA 1:50").
    • Code not in library → use your judgement: fixtures/outlets/sensors → count;
@@ -309,26 +312,74 @@ Do not write any explanation. Do not use markdown. Just output the raw JSON obje
     return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
 
 
-def _count_full_image(b64: str, codes: list[dict]) -> dict[str, int]:
-    """Count symbols on the full drawing image — no tile cuts, simple total count."""
-    codes_desc = "\n".join(f'  "{c["code"]}": {c["name"]}' for c in codes)
-    prompt = f"""You are counting electrical/building-services symbols in a floor plan drawing.
+def _count_one_symbol(b64: str, code: str, name: str) -> int:
+    """Count a single symbol in the floor plan, ignoring legend."""
+    prompt = f"""You are counting electrical/building-services symbols installed in a building floor plan.
 
-Count ONLY these symbols, found in the FLOOR PLAN area:
-{codes_desc}
+CRITICAL — before you count anything:
+  Locate the FÖRKLARINGAR / LEGEND / BETECKNINGAR table in the drawing.
+  This is a bordered box (often bottom-right or top-right) that lists what each
+  symbol looks like. Every symbol shown INSIDE that box is just an example —
+  it is NOT installed in the building. Do not count any symbol inside that box.
+
+Count only this symbol, and only where it appears INSIDE rooms, corridors,
+or building spaces of the floor plan:
+  "{code}": {name}
 
 Rules:
-- Count only symbols placed in the plan. Ignore the legend, title block, and schedules.
-- Do not count the same instance twice.
-- If unsure whether something is the symbol or not, do not count it.
+- If a symbol is in the legend/förklaringar box → do NOT count it.
+- If a symbol is in the title block or revision table → do NOT count it.
+- If you are unsure whether something is really the symbol → do NOT count it.
+- Count each physical instance exactly once.
 
-IMPORTANT: Your entire response must be a single JSON object, nothing else.
-No markdown, no explanation. Raw JSON only.
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
+First character {{, last character }}.
+{{"{code}": 27}}"""
+
+    resp = _client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=512,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    result = _extract_json(resp.content[0].text)
+    return int(result.get(code, 0))
+
+
+def _count_full_image(b64: str, codes: list[dict]) -> dict[str, int]:
+    """
+    Pass A — count each symbol individually (one API call per symbol).
+    Focused single-symbol prompts are more accurate than multi-symbol prompts.
+    """
+    return {c["code"]: _count_one_symbol(b64, c["code"], c["name"]) for c in codes}
+
+
+def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
+    """
+    Pass B — legend-aware count.
+    Instructs Claude to exclude the förklaringar / legend section before counting.
+    Different instruction framing from Pass A gives an independent result.
+    """
+    codes_desc = "\n".join(f'  "{c["code"]}": {c["name"]}' for c in codes)
+    prompt = f"""You are a quantity surveyor counting symbols in a building services floor plan.
+
+The drawing likely contains a "FÖRKLARINGAR", "LEGEND", or "BETECKNINGAR" box
+(often a bordered table in a corner or along an edge) that shows what each symbol means.
+Symbols inside that legend box are just examples — they must NOT be counted.
+
+Count each of the following symbols only where they appear in the actual floor plan
+(rooms, corridors, shafts) — never in the legend, title block, or revision table:
+{codes_desc}
+
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
+The first character must be {{ and the last must be }}.
 {{{{"P11": 27, "DA": 3}}}}"""
 
     resp = _client().messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=256,
+        max_tokens=512,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
             {"type": "text", "text": prompt},
@@ -336,6 +387,46 @@ No markdown, no explanation. Raw JSON only.
     )
     result = _extract_json(resp.content[0].text)
     return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
+
+
+def _count_systematic_scan(b64: str, codes: list[dict]) -> dict[str, int]:
+    """
+    Pass C — spatial-quadrant count.
+    Claude mentally counts per quadrant and sums them, skipping annotation areas.
+    Different decomposition from Passes A and B.
+    """
+    codes_desc = "\n".join(f'  "{c["code"]}": {c["name"]}' for c in codes)
+    prompt = f"""You are a quantity surveyor counting symbols in a building services floor plan.
+
+Mentally divide the floor plan into four quadrants (top-left, top-right, bottom-left,
+bottom-right) and count the symbols in each quadrant. Then sum them for the total.
+
+Do NOT count any symbol inside a legend table, förklaringar box, title block,
+or any bordered annotation area — those are diagram examples, not real installed items.
+
+Symbols to count:
+{codes_desc}
+
+YOUR ENTIRE RESPONSE MUST BE ONLY A FLAT RAW JSON OBJECT — one key per symbol code,
+value is the TOTAL across all quadrants. No per-quadrant breakdown, no explanation,
+no markdown. The first character must be {{ and the last must be }}.
+{{{{"P11": 27, "DA": 3}}}}"""
+
+    resp = _client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=512,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    result = _extract_json(resp.content[0].text)
+    # Guard: if Claude still returns nested dict, fall back to 0 for that code
+    flat = {}
+    for c in codes:
+        val = result.get(c["code"], 0)
+        flat[c["code"]] = int(val) if isinstance(val, (int, float)) else 0
+    return flat
 
 
 def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> dict:
@@ -380,18 +471,28 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     length_items = [c for c in raw.get("components", [])
                     if c.get("measurement_type", "count") != "count"]
 
-    # ── Passes A/B/C — three independent full-image counts (no tiling) ─────────
-    # Tiling always double-counts symbols on cut lines.
-    # Three separate full-image calls give majority-vote without boundary errors.
+    # ── Passes A/B — two independent counts ────────────────────────────────────
+    # Pass A: reuse the quantity already produced by Pass 1 (_ask_full_drawing).
+    #         It reasons holistically about the whole drawing — no extra tokens.
+    # Pass B: dedicated count with explicit legend-exclusion instruction.
+    #         Different prompt context → genuinely independent result.
+    # Pass C: legend-aware count from a different angle (exclude förklaringar).
     if count_items:
         pdf_stem = Path(drawing_pdf_path).stem
-        print(f"\n  [AI] Counting (3 × full-image) for {pdf_stem}:")
+
+        print(f"\n  [AI] Counting (3 passes) for {pdf_stem}:")
+
+        # Pass A — focused floor-plan count with explicit legend exclusion
         grid_a = _count_full_image(full_b64, count_items)
-        print(f"  Pass A: { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
-        grid_b = _count_full_image(full_b64, count_items)
-        print(f"  Pass B: { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
+        print(f"  Pass A (focused):  { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
+
+        # Pass B — legend-first: locate förklaringar box then count outside it
+        grid_b = _count_legend_aware(full_b64, count_items)
+        print(f"  Pass B (legend):   { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
+
+        # Pass C — same prompt as A, independent run (stochastic variation)
         grid_c = _count_full_image(full_b64, count_items)
-        print(f"  Pass C: { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
+        print(f"  Pass C (focused2): { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
 
         print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result")
         for item in count_items:
@@ -407,8 +508,8 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
             elif b == c:
                 final, confidence = b, "medium"
             else:
-                # All three differ — trust Pass B (most methodical enumeration)
-                final, confidence = b, "low"
+                # All three differ — trust Pass A (holistic pass1 analysis)
+                final, confidence = a, "low"
 
             item["count_grid_a"]     = a
             item["count_grid_b"]     = b
