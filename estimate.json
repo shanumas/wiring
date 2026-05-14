@@ -1,445 +1,216 @@
 {
   "items": [
     {
-      "system": "W1",
-      "name": "W1",
+      "system": "FBK",
+      "name": "Fönsterbänkskanal",
       "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
+      "width_mm": 100,
+      "ok_ofg_mm": 2700,
+      "uk_ofg_mm": 200,
       "fire_rating": null,
-      "count": 28,
-      "horizontal_length_mm": 137134,
+      "count": 3,
+      "horizontal_length_mm": 7505,
       "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 137134,
-      "total_length_m": 137.13,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 68567,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
+      "vertical_length_mm": 7500,
+      "total_length_mm": 15005,
+      "total_length_m": 15.01,
+      "unit_cost_sek_per_m": 380,
+      "total_cost_sek": 5702,
+      "confidence": 0.85,
+      "confidence_notes": []
     },
     {
-      "system": "F1",
-      "name": "F1",
+      "system": "KR",
+      "name": "Kabelränna",
       "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
+      "width_mm": 400,
+      "ok_ofg_mm": 2700,
+      "uk_ofg_mm": 1000,
       "fire_rating": null,
-      "count": 14,
-      "horizontal_length_mm": 57464,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 57464,
-      "total_length_m": 57.46,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 28732,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "FH",
-      "name": "FRHF 3G2,5",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 10,
-      "horizontal_length_mm": 33528,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 33528,
-      "total_length_m": 33.53,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 16764,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "F2",
-      "name": "F2",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 7,
-      "horizontal_length_mm": 41677,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 41677,
-      "total_length_m": 41.68,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 20839,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "A",
-      "name": "A",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 6,
-      "horizontal_length_mm": 23781,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 23781,
-      "total_length_m": 23.78,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 11890,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "W1",
-      "name": "W1",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": "EI 30-C",
-      "count": 6,
-      "horizontal_length_mm": 7051,
+      "count": 1,
+      "horizontal_length_mm": 1120,
       "length_source": "annotation_span",
-      "vertical_length_mm": 0,
-      "total_length_mm": 7051,
-      "total_length_m": 7.05,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 3525,
-      "confidence": 0.45,
+      "vertical_length_mm": 1700,
+      "total_length_mm": 2820,
+      "total_length_m": 2.82,
+      "unit_cost_sek_per_m": 510,
+      "total_cost_sek": 1438,
+      "confidence": 0.65,
       "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified",
         "length lower-bound from annotation positions"
       ]
     },
     {
-      "system": "D1",
-      "name": "D1",
+      "system": "KS",
+      "name": "Kabelstege",
       "orientation": "horizontal",
-      "width_mm": null,
+      "width_mm": 400,
       "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
+      "uk_ofg_mm": 2700,
+      "fire_rating": "EI 30-C",
+      "count": 3,
+      "horizontal_length_mm": 2051,
+      "length_source": "paths",
+      "vertical_length_mm": 8100,
+      "total_length_mm": 10151,
+      "total_length_m": 10.15,
+      "unit_cost_sek_per_m": 980,
+      "total_cost_sek": 9948,
+      "confidence": 0.95,
+      "confidence_notes": []
+    },
+    {
+      "system": "KS",
+      "name": "Kabelstege",
+      "orientation": "horizontal",
+      "width_mm": 400,
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": 2700,
       "fire_rating": null,
-      "count": 3,
-      "horizontal_length_mm": 41277,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 41277,
-      "total_length_m": 41.28,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 20638,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "D2",
-      "name": "D2",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": "EI 30-C",
-      "count": 3,
-      "horizontal_length_mm": 4052,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 4052,
-      "total_length_m": 4.05,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 2026,
-      "confidence": 0.6,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "F2",
-      "name": "F2",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": "EI 30-C",
-      "count": 3,
-      "horizontal_length_mm": 0,
-      "length_source": "heuristic",
-      "vertical_length_mm": 0,
-      "total_length_mm": 0,
-      "total_length_m": 0.0,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 0,
-      "confidence": 0.35,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified",
-        "length estimated from height data only",
-        "fire rating associated by x-band proximity"
-      ]
-    },
-    {
-      "system": "F5",
-      "name": "F5",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 3,
-      "horizontal_length_mm": 8102,
-      "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 8102,
-      "total_length_m": 8.1,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 4051,
-      "confidence": 0.5,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
-    },
-    {
-      "system": "FH",
-      "name": "FRHF 3G2,5",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": "EI 30-C",
       "count": 2,
-      "horizontal_length_mm": 7210,
-      "length_source": "annotation_span",
-      "vertical_length_mm": 0,
-      "total_length_mm": 7210,
-      "total_length_m": 7.21,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 3605,
-      "confidence": 0.45,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified",
-        "length lower-bound from annotation positions"
-      ]
-    },
-    {
-      "system": "B",
-      "name": "B",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 1,
-      "horizontal_length_mm": 194,
-      "length_source": "annotation_span",
-      "vertical_length_mm": 0,
-      "total_length_mm": 194,
-      "total_length_m": 0.19,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 97,
-      "confidence": 0.3,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified",
-        "length lower-bound from annotation positions"
-      ]
-    },
-    {
-      "system": "D",
-      "name": "D",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": "EI 30-C",
-      "count": 1,
-      "horizontal_length_mm": 194,
-      "length_source": "annotation_span",
-      "vertical_length_mm": 0,
-      "total_length_mm": 194,
-      "total_length_m": 0.19,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 97,
-      "confidence": 0.4,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified",
-        "length lower-bound from annotation positions"
-      ]
-    },
-    {
-      "system": "D4",
-      "name": "D4",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
-      "fire_rating": null,
-      "count": 1,
-      "horizontal_length_mm": 14859,
+      "horizontal_length_mm": 420,
       "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 14859,
-      "total_length_m": 14.86,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 7430,
-      "confidence": 0.45,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
+      "vertical_length_mm": 5400,
+      "total_length_mm": 5820,
+      "total_length_m": 5.82,
+      "unit_cost_sek_per_m": 620,
+      "total_cost_sek": 3608,
+      "confidence": 0.85,
+      "confidence_notes": []
     },
     {
-      "system": "D5",
-      "name": "D5",
+      "system": "KS",
+      "name": "Kabelstege",
       "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
-      "uk_ofg_mm": null,
+      "width_mm": 400,
+      "ok_ofg_mm": 2700,
+      "uk_ofg_mm": 1000,
       "fire_rating": null,
       "count": 1,
-      "horizontal_length_mm": 9320,
+      "horizontal_length_mm": 499,
       "length_source": "paths",
-      "vertical_length_mm": 0,
-      "total_length_mm": 9320,
-      "total_length_m": 9.32,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 4660,
-      "confidence": 0.45,
-      "confidence_notes": [
-        "width unknown (per drawing)",
-        "mounting height unspecified"
-      ]
+      "vertical_length_mm": 1700,
+      "total_length_mm": 2199,
+      "total_length_m": 2.2,
+      "unit_cost_sek_per_m": 620,
+      "total_cost_sek": 1363,
+      "confidence": 0.8,
+      "confidence_notes": []
     },
     {
-      "system": "F1",
-      "name": "F1",
-      "orientation": "horizontal",
-      "width_mm": null,
-      "ok_ofg_mm": null,
+      "system": "FBK",
+      "name": "Vertikal Fönsterbänkskanal",
+      "orientation": "vertical",
+      "width_mm": "per_drawing",
+      "ok_ofg_mm": 900,
       "uk_ofg_mm": null,
-      "fire_rating": "EI 30-C",
-      "count": 1,
+      "fire_rating": null,
+      "count": "legend",
+      "vertical_reference_height_mm": 900,
       "horizontal_length_mm": 0,
-      "length_source": "heuristic",
+      "length_source": "legend",
       "vertical_length_mm": 0,
       "total_length_mm": 0,
       "total_length_m": 0.0,
       "unit_cost_sek_per_m": 500,
       "total_cost_sek": 0,
-      "confidence": 0.3,
+      "confidence": 0.2,
       "confidence_notes": [
         "width unknown (per drawing)",
-        "mounting height unspecified",
-        "length estimated from height data only",
-        "fire rating associated by x-band proximity"
+        "count not determined (legend entry)",
+        "no length data (legend entry)"
       ]
     },
     {
-      "system": "W2",
-      "name": "W2",
+      "system": "KR",
+      "name": "Vertikal Kabelränna",
+      "orientation": "vertical",
+      "width_mm": "per_drawing",
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": "legend",
+      "horizontal_length_mm": 0,
+      "length_source": "legend",
+      "vertical_length_mm": 0,
+      "total_length_mm": 0,
+      "total_length_m": 0.0,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 0,
+      "confidence": 0.05,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified",
+        "count not determined (legend entry)",
+        "no length data (legend entry)"
+      ]
+    },
+    {
+      "system": "KS",
+      "name": "Vertikal Kabelstege",
+      "orientation": "vertical",
+      "width_mm": "per_drawing",
+      "ok_ofg_mm": null,
+      "uk_ofg_mm": null,
+      "fire_rating": null,
+      "count": "legend",
+      "horizontal_length_mm": 0,
+      "length_source": "legend",
+      "vertical_length_mm": 0,
+      "total_length_mm": 0,
+      "total_length_m": 0.0,
+      "unit_cost_sek_per_m": 500,
+      "total_cost_sek": 0,
+      "confidence": 0.05,
+      "confidence_notes": [
+        "width unknown (per drawing)",
+        "mounting height unspecified",
+        "count not determined (legend entry)",
+        "no length data (legend entry)"
+      ]
+    },
+    {
+      "system": "Tomrör",
+      "name": "Tomrör",
       "orientation": "horizontal",
       "width_mm": null,
       "ok_ofg_mm": null,
       "uk_ofg_mm": null,
       "fire_rating": null,
-      "count": 1,
-      "horizontal_length_mm": 951,
-      "length_source": "annotation_span",
+      "count": "present",
+      "diameter_mm": 16,
+      "horizontal_length_mm": 0,
+      "length_source": "legend",
       "vertical_length_mm": 0,
-      "total_length_mm": 951,
-      "total_length_m": 0.95,
-      "unit_cost_sek_per_m": 500,
-      "total_cost_sek": 476,
-      "confidence": 0.3,
+      "total_length_mm": 0,
+      "total_length_m": 0.0,
+      "unit_cost_sek_per_m": 75,
+      "total_cost_sek": 0,
+      "confidence": 0.1,
       "confidence_notes": [
         "width unknown (per drawing)",
         "mounting height unspecified",
-        "length lower-bound from annotation positions"
+        "count not determined (legend entry)",
+        "no length data (legend entry)"
       ]
     }
   ],
   "totals": {
-    "total_cost_sek": 193397,
-    "total_length_m": 386.78,
+    "total_cost_sek": 22059,
+    "total_length_m": 36.0,
     "scale_mm_per_pt": 17.6389,
     "by_system": {
-      "W1": {
-        "total_length_m": 144.18,
-        "total_cost_sek": 72092
+      "FBK": {
+        "total_length_m": 15.01,
+        "total_cost_sek": 5702
       },
-      "F1": {
-        "total_length_m": 57.46,
-        "total_cost_sek": 28732
+      "KR": {
+        "total_length_m": 2.82,
+        "total_cost_sek": 1438
       },
-      "FH": {
-        "total_length_m": 40.74,
-        "total_cost_sek": 20369
-      },
-      "F2": {
-        "total_length_m": 41.68,
-        "total_cost_sek": 20839
-      },
-      "A": {
-        "total_length_m": 23.78,
-        "total_cost_sek": 11890
-      },
-      "D1": {
-        "total_length_m": 41.28,
-        "total_cost_sek": 20638
-      },
-      "D2": {
-        "total_length_m": 4.05,
-        "total_cost_sek": 2026
-      },
-      "F5": {
-        "total_length_m": 8.1,
-        "total_cost_sek": 4051
-      },
-      "B": {
-        "total_length_m": 0.19,
-        "total_cost_sek": 97
-      },
-      "D": {
-        "total_length_m": 0.19,
-        "total_cost_sek": 97
-      },
-      "D4": {
-        "total_length_m": 14.86,
-        "total_cost_sek": 7430
-      },
-      "D5": {
-        "total_length_m": 9.32,
-        "total_cost_sek": 4660
-      },
-      "W2": {
-        "total_length_m": 0.95,
-        "total_cost_sek": 476
+      "KS": {
+        "total_length_m": 18.17,
+        "total_cost_sek": 14919
       }
     }
   }

@@ -356,26 +356,20 @@ def _count_full_image(b64: str, codes: list[dict]) -> dict[str, int]:
     return {c["code"]: _count_one_symbol(b64, c["code"], c["name"]) for c in codes}
 
 
-def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
-    """
-    Pass B — legend-aware count.
-    Instructs Claude to exclude the förklaringar / legend section before counting.
-    Different instruction framing from Pass A gives an independent result.
-    """
-    codes_desc = "\n".join(f'  "{c["code"]}": {c["name"]}' for c in codes)
+def _count_one_symbol_legend(b64: str, code: str, name: str) -> int:
+    """Pass B variant — same single-symbol approach but different framing."""
     prompt = f"""You are a quantity surveyor counting symbols in a building services floor plan.
 
-The drawing likely contains a "FÖRKLARINGAR", "LEGEND", or "BETECKNINGAR" box
-(often a bordered table in a corner or along an edge) that shows what each symbol means.
-Symbols inside that legend box are just examples — they must NOT be counted.
+The drawing contains a "FÖRKLARINGAR", "LEGEND", or "BETECKNINGAR" box
+(a bordered table, often in a corner) that shows what each symbol means.
+Symbols inside that box are just examples — they must NOT be counted.
 
-Count each of the following symbols only where they appear in the actual floor plan
-(rooms, corridors, shafts) — never in the legend, title block, or revision table:
-{codes_desc}
+Count how many "{code}" ({name}) symbols appear in the actual floor plan
+(rooms, corridors, shafts) — never in the legend, title block, or revision table.
 
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
 The first character must be {{ and the last must be }}.
-{{{{"P11": 27, "DA": 3}}}}"""
+{{"{code}": 27}}"""
 
     resp = _client().messages.create(
         model="claude-sonnet-4-6",
@@ -386,7 +380,12 @@ The first character must be {{ and the last must be }}.
         ]}],
     )
     result = _extract_json(resp.content[0].text)
-    return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
+    return int(result.get(code, 0))
+
+
+def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
+    """Pass B — individual calls with legend-aware framing."""
+    return {c["code"]: _count_one_symbol_legend(b64, c["code"], c["name"]) for c in codes}
 
 
 def _count_systematic_scan(b64: str, codes: list[dict]) -> dict[str, int]:
