@@ -306,9 +306,12 @@ def _ask_full_drawing(b64: str, lib_block: str) -> dict:
 Analyse this drawing image and return a full quantity takeoff.
 
 Instructions:
-1. Identify EVERY component code present — read codes from annotations and symbol
-   labels in the floor plan. Use the legend / förklaringar box only to understand
-   what each code means — do NOT count symbols shown inside the legend box itself.
+1. Identify EVERY component code present — read codes EXACTLY as printed in the
+   drawing (e.g. "V18" is not "V11", "D2" is not "D7"). Read each digit carefully.
+   Use the legend / förklaringar box only to understand what each code means —
+   do NOT count symbols shown inside the legend box itself.
+   IMPORTANT: Only use codes that actually appear in the component library above
+   or that you can clearly read from the drawing labels. Do not invent codes.
 2. For each code, check the component library above:
    • measurement_type "count"  → count all instances placed in the floor plan
      (rooms, corridors, shafts). Exclude any instance inside the legend /
