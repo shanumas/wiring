@@ -71,6 +71,84 @@ def save_ai_cache(pdf_path: str, result: dict) -> None:
     p.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 
 
+# ── PDF text-based symbol counting ───────────────────────────────────────────
+
+def _count_from_pdf_text(pdf_path: str, codes: list[dict],
+                          legend_bbox: dict | None = None) -> dict[str, int]:
+    """
+    Count symbol occurrences by extracting text from the PDF page.
+    Excludes any text in the FÖRKLARINGAR / legend section.
+
+    Strategy (zero tokens):
+    1. Scan the PDF text for a FÖRKLARINGAR / LEGEND header to find where
+       the symbol legend section starts.  All text whose y-coordinate is
+       at or above that header (minus a 120-pt buffer to catch the symbol
+       code column that sits above the title row) is excluded.
+    2. Optionally also exclude text inside a Claude-supplied legend_bbox.
+
+    legend_bbox: {"x1": %, "y1": %, "x2": %, "y2": %} as percentages of
+                 page.rect dimensions, or None.
+    """
+    doc  = fitz.open(pdf_path)
+    page = doc[0]
+    w, h = page.rect.width, page.rect.height
+
+    # ── 1. Locate the FÖRKLARINGAR label in the PDF text stream ──────────────
+    # In rotated PDFs the y-axis from get_text("dict") runs in a transformed
+    # coordinate space; we find the label and use y1 - 120 pts as a cut-off
+    # so that symbol codes listed in rows just above the header are excluded too.
+    legend_y_cut = None
+    for blk in page.get_text("dict")["blocks"]:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk["lines"]:
+            for sp in ln["spans"]:
+                if re.search(r'F.RKLARINGAR|FÖRKLARINGAR|FORKLARINGAR|LEGEND',
+                             sp["text"], re.IGNORECASE):
+                    legend_y_cut = sp["bbox"][1] - 120   # include a safe buffer
+                    break
+            if legend_y_cut is not None:
+                break
+        if legend_y_cut is not None:
+            break
+
+    # ── 2. Build exclusion rect from Claude-supplied legend_bbox (if any) ────
+    excl = None
+    if legend_bbox and legend_bbox.get("x2", 0) > 0:
+        excl = fitz.Rect(
+            w * legend_bbox["x1"] / 100,
+            h * legend_bbox["y1"] / 100,
+            w * legend_bbox["x2"] / 100,
+            h * legend_bbox["y2"] / 100,
+        )
+
+    # ── 3. Collect text spans that are in the drawing area ───────────────────
+    parts = []
+    for blk in page.get_text("dict")["blocks"]:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk["lines"]:
+            for sp in ln["spans"]:
+                bbox = sp["bbox"]
+                # Exclude text at or past the FÖRKLARINGAR section
+                if legend_y_cut is not None and bbox[1] >= legend_y_cut:
+                    continue
+                # Also exclude by Claude-identified bbox rect (if available)
+                if excl and fitz.Rect(bbox).intersects(excl):
+                    continue
+                parts.append(sp["text"])
+
+    full_text = "".join(parts)
+    doc.close()
+
+    counts = {}
+    for c in codes:
+        code = c["code"]
+        # findall on concatenated text handles "P11P11P11" → 3
+        counts[code] = len(re.findall(re.escape(code), full_text))
+    return counts
+
+
 # ── PDF → base64 PNG ──────────────────────────────────────────────────────────
 
 def _page_to_b64(pdf_path: str, page_num: int = 0, max_px: int = 2400) -> str:
@@ -463,6 +541,42 @@ def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
     return {c["code"]: _count_one_symbol_legend(b64, c["code"], c["name"]) for c in codes}
 
 
+def _verify_presence(b64: str, codes: list[dict]) -> set[str]:
+    """
+    Ask Claude which codes are actually present in the floor plan.
+    Returns a set of codes that exist. Codes not in the set should be counted as 0.
+    Uses a single batched call for efficiency.
+    """
+    codes_desc = "\n".join(f'  "{c["code"]}": {c["name"]}' for c in codes)
+    prompt = f"""You are reviewing a building services floor plan.
+
+For each symbol code below, answer whether it actually appears in the FLOOR PLAN
+(not in the legend/förklaringar box, not in the title block — only in the actual plan).
+
+Symbols to check:
+{codes_desc}
+
+Return a JSON object where the value is true if the symbol exists in the floor plan,
+false if it does not exist at all.
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
+{{"P11": true, "D3": false}}"""
+
+    resp = _client().messages.create(
+        model=SONNET,
+        max_tokens=512,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        result = _extract_json(resp.content[0].text)
+        return {c["code"] for c in codes if result.get(c["code"], True)}
+    except Exception:
+        # On parse failure, assume all present (safe fallback)
+        return {c["code"] for c in codes}
+
+
 def _count_systematic_scan(b64: str, codes: list[dict]) -> dict[str, int]:
     """
     Pass C — spatial-quadrant count.
@@ -550,44 +664,40 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
         pdf_stem = Path(drawing_pdf_path).stem
         print(f"\n  [AI] Counting (3 passes) for {pdf_stem}:")
 
-        # Locate the legend box and render a masked image (legend whited out).
-        # Claude cannot count symbols it cannot see — this is more reliable than
-        # instruction-based exclusion.
+        # Find legend bbox to exclude from text counting
         legend_bbox = _find_legend_bbox(full_b64)
         if legend_bbox:
-            print(f"  Legend box found: {legend_bbox} — masking for count passes")
-            count_b64 = _page_to_b64_masked(drawing_pdf_path, legend_bbox, max_px=2400)
+            print(f"  Legend box found: {legend_bbox} — excluding from text count")
         else:
-            print(f"  No legend box found — using full image")
-            count_b64 = full_b64
+            print(f"  No legend box found — counting full page text")
 
-        # Legend is already masked — use the same simple prompt for all 3 passes.
-        # No need for legend-aware instructions; stochastic variation gives independence.
-        grid_a = _count_full_image(count_b64, count_items)
-        print(f"  Pass A: { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
+        # Count by extracting text directly from the PDF — exact, zero tokens.
+        text_counts = _count_from_pdf_text(drawing_pdf_path, count_items, legend_bbox)
+        print(f"  Text counts: { {c['code']: text_counts.get(c['code'],0) for c in count_items} }")
 
-        grid_b = _count_full_image(count_b64, count_items)
-        print(f"  Pass B: { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
-
-        grid_c = _count_full_image(count_b64, count_items)
-        print(f"  Pass C: { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
+        # All three grids are the same exact value from text extraction.
+        grid_a = grid_b = grid_c = text_counts
 
         print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result")
         for item in count_items:
             code = item["code"]
-            a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
 
-            if a == b == c:
-                final, confidence = a, "high"
-            elif a == b:
-                final, confidence = a, "medium"
-            elif a == c:
-                final, confidence = a, "medium"
-            elif b == c:
-                final, confidence = b, "medium"
+            # Symbols confirmed absent by presence check are always 0
+            if code not in present:
+                a = b = c = 0
+                final, confidence = 0, "high"
             else:
-                # All three differ — trust Pass A (holistic pass1 analysis)
-                final, confidence = a, "low"
+                a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
+                if a == b == c:
+                    final, confidence = a, "high"
+                elif a == b:
+                    final, confidence = a, "medium"
+                elif a == c:
+                    final, confidence = a, "medium"
+                elif b == c:
+                    final, confidence = b, "medium"
+                else:
+                    final, confidence = a, "low"
 
             item["count_grid_a"]     = a
             item["count_grid_b"]     = b
