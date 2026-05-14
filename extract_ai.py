@@ -312,8 +312,12 @@ Do not write any explanation. Do not use markdown. Just output the raw JSON obje
     return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
 
 
-def _count_one_symbol(b64: str, code: str, name: str) -> int:
-    """Count a single symbol in the floor plan, ignoring legend."""
+def _count_one_symbol(b64: str, code: str, name: str, hint: int | None = None) -> int:
+    """
+    Count a single symbol in the floor plan, ignoring legend.
+    hint: Pass 1 rough count — used as example value so Claude anchors near the right range.
+    """
+    example_val = hint if hint is not None else 0
     prompt = f"""You are counting electrical/building-services symbols installed in a building floor plan.
 
 CRITICAL — before you count anything:
@@ -333,8 +337,7 @@ Rules:
 - Count each physical instance exactly once.
 
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
-First character {{, last character }}.
-{{"{code}": 27}}"""
+{{"{code}": {example_val}}}"""
 
     resp = _client().messages.create(
         model="claude-sonnet-4-6",
@@ -348,12 +351,12 @@ First character {{, last character }}.
     return int(result.get(code, 0))
 
 
-def _count_full_image(b64: str, codes: list[dict]) -> dict[str, int]:
+def _count_full_image(b64: str, codes: list[dict], hints: dict[str, int] | None = None) -> dict[str, int]:
     """
-    Pass A — count each symbol individually (one API call per symbol).
-    Focused single-symbol prompts are more accurate than multi-symbol prompts.
+    Pass A/C — count each symbol individually using the legend-aware prompt.
+    hints parameter kept for signature compatibility but no longer used.
     """
-    return {c["code"]: _count_one_symbol(b64, c["code"], c["name"]) for c in codes}
+    return {c["code"]: _count_one_symbol_legend(b64, c["code"], c["name"]) for c in codes}
 
 
 def _count_one_symbol_legend(b64: str, code: str, name: str) -> int:
@@ -368,8 +371,7 @@ Count how many "{code}" ({name}) symbols appear in the actual floor plan
 (rooms, corridors, shafts) — never in the legend, title block, or revision table.
 
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
-The first character must be {{ and the last must be }}.
-{{"{code}": 27}}"""
+Format: {{"{code}": <your_count>}}"""
 
     resp = _client().messages.create(
         model="claude-sonnet-4-6",
@@ -481,17 +483,16 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
 
         print(f"\n  [AI] Counting (3 passes) for {pdf_stem}:")
 
-        # Pass A — focused floor-plan count with explicit legend exclusion
+        # Three independent runs of the legend-aware per-symbol prompt.
+        # Same prompt, stochastic variation → genuine independent counts.
         grid_a = _count_full_image(full_b64, count_items)
-        print(f"  Pass A (focused):  { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
+        print(f"  Pass A: { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
 
-        # Pass B — legend-first: locate förklaringar box then count outside it
         grid_b = _count_legend_aware(full_b64, count_items)
-        print(f"  Pass B (legend):   { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
+        print(f"  Pass B: { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
 
-        # Pass C — same prompt as A, independent run (stochastic variation)
         grid_c = _count_full_image(full_b64, count_items)
-        print(f"  Pass C (focused2): { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
+        print(f"  Pass C: { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
 
         print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result")
         for item in count_items:
