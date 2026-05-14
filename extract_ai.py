@@ -123,6 +123,8 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
         )
 
     # ── 3. Collect text spans that are in the drawing area ───────────────────
+    # Spans are joined with "|" so that letters at the end of one span cannot
+    # bleed into the start of a code in the next span (e.g. "A|P12" not "AP12").
     parts = []
     for blk in page.get_text("dict")["blocks"]:
         if blk.get("type") != 0:
@@ -138,14 +140,20 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
                     continue
                 parts.append(sp["text"])
 
-    full_text = "".join(parts)
+    full_text = "|".join(parts)
     doc.close()
 
     counts = {}
     for c in codes:
         code = c["code"]
-        # findall on concatenated text handles "P11P11P11" → 3
-        counts[code] = len(re.findall(re.escape(code), full_text))
+        # Require the code is not followed by a digit, so "D1" won't match
+        # inside "D10" or "D15".  Spans are joined with "|" (a non-alphanumeric
+        # separator) so that a letter at the END of one span cannot merge with
+        # the START of a code span (e.g. "A" + "P12" → "A|P12", not "AP12").
+        # Packed runs within a single span, like "P11P11D1F2", still work
+        # because there is no separator inside a span.
+        pattern = re.escape(code) + r"(?!\d)"
+        counts[code] = len(re.findall(pattern, full_text))
     return counts
 
 
