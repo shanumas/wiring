@@ -85,6 +85,66 @@ def _page_to_b64(pdf_path: str, page_num: int = 0, max_px: int = 2400) -> str:
     return data
 
 
+def _find_legend_bbox(b64: str) -> dict | None:
+    """
+    Ask Claude where the FÖRKLARINGAR / legend box is located.
+    Returns {"x1": %, "y1": %, "x2": %, "y2": %} as percentages of image dimensions,
+    or None if no legend box found.
+    """
+    prompt = """This is a Swedish building services drawing.
+Locate the FÖRKLARINGAR, LEGEND, or BETECKNINGAR box — a bordered table that
+lists and explains what each symbol means. It is usually in a corner of the drawing.
+
+Return its location as percentage of the full image width/height:
+{"x1": <left%>, "y1": <top%>, "x2": <right%>, "y2": <bottom%>}
+
+If no such box exists, return: {"x1": 0, "y1": 0, "x2": 0, "y2": 0}
+
+ONLY output the raw JSON object, nothing else."""
+
+    resp = _client().messages.create(
+        model=SONNET,
+        max_tokens=64,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        bbox = _extract_json(resp.content[0].text)
+        if bbox.get("x2", 0) == 0 and bbox.get("y2", 0) == 0:
+            return None
+        return bbox
+    except Exception:
+        return None
+
+
+def _page_to_b64_masked(pdf_path: str, legend_bbox: dict, page_num: int = 0, max_px: int = 2400) -> str:
+    """
+    Render the PDF page with the legend area whited out so Claude cannot see it.
+    legend_bbox: {"x1": %, "y1": %, "x2": %, "y2": %} as percentages.
+    """
+    doc  = fitz.open(pdf_path)
+    page = doc[page_num]
+    w, h = page.rect.width, page.rect.height
+
+    x1 = w * legend_bbox["x1"] / 100
+    y1 = h * legend_bbox["y1"] / 100
+    x2 = w * legend_bbox["x2"] / 100
+    y2 = h * legend_bbox["y2"] / 100
+
+    # Draw a white rectangle over the legend area
+    rect = fitz.Rect(x1, y1, x2, y2)
+    page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
+
+    longest = max(w, h)
+    scale   = min(max_px / longest, 2.0)
+    pix     = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+    data    = base64.standard_b64encode(pix.tobytes("png")).decode()
+    doc.close()
+    return data
+
+
 # ── JSON extraction helper ────────────────────────────────────────────────────
 
 def _extract_json(text: str) -> dict:
@@ -482,26 +542,31 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     length_items = [c for c in raw.get("components", [])
                     if c.get("measurement_type", "count") != "count"]
 
-    # ── Passes A/B — two independent counts ────────────────────────────────────
-    # Pass A: reuse the quantity already produced by Pass 1 (_ask_full_drawing).
-    #         It reasons holistically about the whole drawing — no extra tokens.
-    # Pass B: dedicated count with explicit legend-exclusion instruction.
-    #         Different prompt context → genuinely independent result.
-    # Pass C: legend-aware count from a different angle (exclude förklaringar).
+    # ── Counting passes — legend physically removed from image ─────────────────
     if count_items:
         pdf_stem = Path(drawing_pdf_path).stem
-
         print(f"\n  [AI] Counting (3 passes) for {pdf_stem}:")
 
-        # Three independent runs of the legend-aware per-symbol prompt.
-        # Same prompt, stochastic variation → genuine independent counts.
-        grid_a = _count_full_image(full_b64, count_items)
+        # Locate the legend box and render a masked image (legend whited out).
+        # Claude cannot count symbols it cannot see — this is more reliable than
+        # instruction-based exclusion.
+        legend_bbox = _find_legend_bbox(full_b64)
+        if legend_bbox:
+            print(f"  Legend box found: {legend_bbox} — masking for count passes")
+            count_b64 = _page_to_b64_masked(drawing_pdf_path, legend_bbox, max_px=2400)
+        else:
+            print(f"  No legend box found — using full image")
+            count_b64 = full_b64
+
+        # Legend is already masked — use the same simple prompt for all 3 passes.
+        # No need for legend-aware instructions; stochastic variation gives independence.
+        grid_a = _count_full_image(count_b64, count_items)
         print(f"  Pass A: { {c['code']: grid_a.get(c['code'],0) for c in count_items} }")
 
-        grid_b = _count_legend_aware(full_b64, count_items)
+        grid_b = _count_full_image(count_b64, count_items)
         print(f"  Pass B: { {c['code']: grid_b.get(c['code'],0) for c in count_items} }")
 
-        grid_c = _count_full_image(full_b64, count_items)
+        grid_c = _count_full_image(count_b64, count_items)
         print(f"  Pass C: { {c['code']: grid_c.get(c['code'],0) for c in count_items} }")
 
         print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result")
