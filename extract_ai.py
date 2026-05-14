@@ -26,7 +26,8 @@ import re
 import fitz
 from pathlib import Path
 
-_CLIENT = None   # lazy-init so import doesn't fail when key is absent
+_CLIENT = None        # lazy-init so import doesn't fail when key is absent
+_CLIENT_HAIKU = None  # cheaper model for counting passes
 
 AI_CACHE_DIR = Path("ai_cache")
 AI_CACHE_DIR.mkdir(exist_ok=True)
@@ -34,8 +35,17 @@ AI_CACHE_DIR.mkdir(exist_ok=True)
 def _client():
     global _CLIENT
     if _CLIENT is None:
-        _CLIENT = anthropic.Anthropic()   # reads ANTHROPIC_API_KEY from env
+        _CLIENT = anthropic.Anthropic()
     return _CLIENT
+
+def _client_haiku():
+    global _CLIENT_HAIKU
+    if _CLIENT_HAIKU is None:
+        _CLIENT_HAIKU = anthropic.Anthropic()
+    return _CLIENT_HAIKU
+
+SONNET = "claude-sonnet-4-6"
+HAIKU  = "claude-haiku-4-5-20251001"
 
 
 def _pdf_hash(pdf_path: str) -> str:
@@ -159,7 +169,7 @@ Return ONLY valid JSON, no other text:
 """})
 
     resp = _client().messages.create(
-        model="claude-sonnet-4-6",
+        model=SONNET,
         max_tokens=4096,
         messages=[{"role": "user", "content": content}],
     )
@@ -269,7 +279,7 @@ No markdown fences, no explanation, no commentary. The very first character must
 }}"""
 
     resp = _client().messages.create(
-        model="claude-sonnet-4-6",
+        model=SONNET,
         max_tokens=4096,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
@@ -301,7 +311,7 @@ Do not write any explanation. Do not use markdown. Just output the raw JSON obje
 {{{{"P11": 3, "DA": 1, "P12": 0}}}}"""
 
     resp = _client().messages.create(
-        model="claude-sonnet-4-6",
+        model=SONNET,
         max_tokens=512,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
@@ -340,7 +350,7 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markd
 {{"{code}": {example_val}}}"""
 
     resp = _client().messages.create(
-        model="claude-sonnet-4-6",
+        model=SONNET,
         max_tokens=512,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
@@ -374,7 +384,7 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markd
 Format: {{"{code}": <your_count>}}"""
 
     resp = _client().messages.create(
-        model="claude-sonnet-4-6",
+        model=SONNET,
         max_tokens=512,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
@@ -414,7 +424,7 @@ no markdown. The first character must be {{ and the last must be }}.
 {{{{"P11": 27, "DA": 3}}}}"""
 
     resp = _client().messages.create(
-        model="claude-sonnet-4-6",
+        model=SONNET,
         max_tokens=512,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
