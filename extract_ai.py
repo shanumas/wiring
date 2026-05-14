@@ -682,22 +682,17 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
         for item in count_items:
             code = item["code"]
 
-            # Symbols confirmed absent by presence check are always 0
-            if code not in present:
-                a = b = c = 0
-                final, confidence = 0, "high"
+            a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
+            if a == b == c:
+                final, confidence = a, "high"
+            elif a == b:
+                final, confidence = a, "medium"
+            elif a == c:
+                final, confidence = a, "medium"
+            elif b == c:
+                final, confidence = b, "medium"
             else:
-                a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
-                if a == b == c:
-                    final, confidence = a, "high"
-                elif a == b:
-                    final, confidence = a, "medium"
-                elif a == c:
-                    final, confidence = a, "medium"
-                elif b == c:
-                    final, confidence = b, "medium"
-                else:
-                    final, confidence = a, "low"
+                final, confidence = a, "low"
 
             item["count_grid_a"]     = a
             item["count_grid_b"]     = b
