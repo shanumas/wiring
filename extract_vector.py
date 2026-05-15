@@ -216,11 +216,147 @@ _UK_PAT      = re.compile(r'UK=\s*(\d+)', re.IGNORECASE)
 _LEGEND_Y    = 2050   # same boundary as extract.py
 _EI_PAT      = re.compile(r'EI\s*30-C', re.IGNORECASE)
 
+# PDF units → real-world mm conversion factor.
+# Standard PDF: 1 pt = 1/72 inch = 25.4/72 mm ≈ 0.353 mm.
+# real_mm = pts × MM_PER_PT × scale_denominator
+MM_PER_PT = 25.4 / 72   # ≈ 0.3528 mm per PDF point
+
 COMP_META = {
     "KS":  {"name": "Kabelstege",       "en": "Cable Ladder",        "color": "#1e4d8c"},
     "KR":  {"name": "Kabelränna",        "en": "Cable Tray",          "color": "#1a6b45"},
     "FBK": {"name": "Fönsterbänkskanal","en": "Window Sill Channel",  "color": "#8a6200"},
+    "FH":  {"name": "FRHF-kabel",        "en": "FRHF Cable",          "color": "#8B0000"},
 }
+
+
+# ── FRHF cable measurement ────────────────────────────────────────────────────
+
+def _dist_to_seg(px: float, py: float, p1, p2) -> float:
+    """Perpendicular distance from point (px,py) to the line segment p1→p2."""
+    dx, dy = p2.x - p1.x, p2.y - p1.y
+    if dx == 0 and dy == 0:
+        return math.hypot(px - p1.x, py - p1.y)
+    t = max(0.0, min(1.0, ((px - p1.x) * dx + (py - p1.y) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - p1.x - t * dx, py - p1.y - t * dy)
+
+
+def _find_legend_y_cut(page) -> float:
+    """Return the Y coordinate below which all text is legend/title block."""
+    for blk in page.get_text("dict")["blocks"]:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk["lines"]:
+            for sp in ln["spans"]:
+                if re.search(r'F.RKLARINGAR|FÖRKLARINGAR|LEGEND', sp["text"], re.IGNORECASE):
+                    return sp["bbox"][1] - 120
+    return _LEGEND_Y  # fallback
+
+
+def _measure_frhf_cables(page, scale: int) -> list[dict]:
+    """
+    Measure FRHF cable runs by locating "FH" text labels in the drawing body
+    and matching each label to its closest PDF drawing group.
+
+    Each label sits directly on a drawing path that represents one cable run.
+    In CAD-generated PDFs each cable run is its own self-contained path group,
+    so we simply:
+      1. Find the drawing group whose segments are closest (by perpendicular
+         distance) to each FH label.
+      2. Sum all segment lengths inside that group.
+      3. Convert pts → metres using MM_PER_PT × scale.
+      4. Deduplicate groups so a run labelled twice is counted only once.
+
+    Returns a list of dicts, one per unique cable run:
+      group_idx, length_m, bbox (display-space), n_segs
+    """
+    legend_y_cut = _find_legend_y_cut(page)
+
+    # ── 1. Collect FH label positions ─────────────────────────────────────────
+    fh_labels: list[tuple[float, float]] = []
+    for blk in page.get_text("dict")["blocks"]:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk["lines"]:
+            for sp in ln["spans"]:
+                if sp["bbox"][1] >= legend_y_cut:
+                    continue
+                if re.fullmatch(r'FH', sp["text"].strip()):
+                    cx = (sp["bbox"][0] + sp["bbox"][2]) / 2
+                    cy = (sp["bbox"][1] + sp["bbox"][3]) / 2
+                    fh_labels.append((cx, cy))
+
+    if not fh_labels:
+        return []
+
+    # ── 2. For each label find the closest drawing group ──────────────────────
+    drawings = list(page.get_drawings())
+    label_to_group: dict[int, int] = {}   # label_idx → group_idx
+
+    for li, (lx, ly) in enumerate(fh_labels):
+        best_d, best_gi = 9999.0, None
+        for gi, d in enumerate(drawings):
+            for item in d.get("items", []):
+                if item[0] != "l":
+                    continue
+                p1, p2 = item[1], item[2]
+                my = (p1.y + p2.y) / 2
+                if my >= legend_y_cut:
+                    continue
+                seg_len = math.hypot(p2.x - p1.x, p2.y - p1.y)
+                if seg_len < 5:
+                    continue
+                dd = _dist_to_seg(lx, ly, p1, p2)
+                if dd < best_d:
+                    best_d, best_gi = dd, gi
+        if best_gi is not None and best_d < 30:
+            label_to_group[li] = best_gi
+
+    # ── 3. Deduplicate: one entry per unique group ────────────────────────────
+    seen_groups: set[int] = set()
+    runs: list[dict] = []
+
+    for li, gi in label_to_group.items():
+        if gi in seen_groups:
+            continue
+        seen_groups.add(gi)
+
+        d = drawings[gi]
+        # Sum deduplicated segment lengths within the group
+        seen_keys: set[tuple] = set()
+        total_pts = 0.0
+        x_coords, y_coords = [], []
+        for item in d.get("items", []):
+            if item[0] != "l":
+                continue
+            p1, p2 = item[1], item[2]
+            my = (p1.y + p2.y) / 2
+            if my >= legend_y_cut:
+                continue
+            seg_len = math.hypot(p2.x - p1.x, p2.y - p1.y)
+            if seg_len < 5:
+                continue
+            k = (round(p1.x), round(p1.y), round(p2.x), round(p2.y))
+            kr = (round(p2.x), round(p2.y), round(p1.x), round(p1.y))
+            if k in seen_keys or kr in seen_keys:
+                continue
+            seen_keys.add(k)
+            total_pts += seg_len
+            x_coords += [p1.x, p2.x]
+            y_coords += [p1.y, p2.y]
+
+        if total_pts < 5 or not x_coords:
+            continue
+
+        length_m = round(total_pts * MM_PER_PT * scale / 1000, 2)
+        raw_bbox = (min(x_coords), min(y_coords), max(x_coords), max(y_coords))
+        runs.append({
+            "group_idx": gi,
+            "length_m":  length_m,
+            "n_segs":    len(seen_keys),
+            "raw_bbox":  raw_bbox,
+        })
+
+    return runs
 
 
 def _collect_labels(page):
@@ -412,6 +548,46 @@ def extract_vectors(pdf_path):
             "total_length_m": round(agg["length_m"], 2),
         })
 
+    # ── FRHF cable measurement ────────────────────────────────────────────────
+    frhf_runs = _measure_frhf_cables(page, scale)
+    fh_meta   = COMP_META["FH"]
+
+    for i, run in enumerate(frhf_runs):
+        raw  = run["raw_bbox"]
+        disp = _to_display_bbox(raw, page)
+        disp = [round(x, 2) for x in disp]
+        components.append({
+            "id":          f"VEC_FH_{i}",
+            "type":        "FH",
+            "name":        fh_meta["name"],
+            "en_name":     fh_meta["en"],
+            "color":       fh_meta["color"],
+            "size":        None,
+            "ok_height":   None,
+            "uk_height":   None,
+            "is_vertical": False,
+            "fire_rating": None,
+            "label":       f"FH — {run['length_m']} m",
+            "bbox":        disp,
+            "length_m":    run["length_m"],
+            "occurrences": 1,
+        })
+
+    if frhf_runs:
+        total_fh_m = round(sum(r["length_m"] for r in frhf_runs), 2)
+        summary.append({
+            "system":         "FH",
+            "name":           fh_meta["name"],
+            "orientation":    "mixed",
+            "width_mm":       None,
+            "ok_ofg_mm":      None,
+            "uk_ofg_mm":      None,
+            "fire_rating":    None,
+            "count":          len(frhf_runs),        # number of cable runs
+            "total_length_m": total_fh_m,
+        })
+        print(f"  [FH] {len(frhf_runs)} cable runs, total {total_fh_m} m")
+
     drawing_type = "kanalisation" if components else "unknown"
 
     w = page.rect.width
@@ -430,14 +606,15 @@ def extract_vectors(pdf_path):
 
 
 if __name__ == "__main__":
-    import json
-    data = extract_vectors("pdf/2.pdf")
+    import sys
+    pdf = sys.argv[1] if len(sys.argv) > 1 else "pdf/1.pdf"
+    data = extract_vectors(pdf)
     print(f"Scale 1:{data['scale']}")
-    print(f"Runs found: {len(data['components'])}")
+    print(f"Components: {len(data['components'])}")
     print()
     for s in data["summary"]:
-        print(f"  {s['system']} {s['width_mm'] or '?'}mm  "
-              f"{s['count']} runs  total={s['total_length_m']} m")
+        w = f" {s['width_mm']}mm" if s.get("width_mm") else ""
+        print(f"  {s['system']}{w}  {s['count']} runs  {s['total_length_m']} m")
     print()
     for c in data["components"]:
         print(f"  {c['type']} {c['size'] or '?'}mm  {c['length_m']} m  bbox={c['bbox']}")

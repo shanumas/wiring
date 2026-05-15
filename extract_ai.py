@@ -625,6 +625,27 @@ no markdown. The first character must be {{ and the last must be }}.
     return flat
 
 
+def _is_text_countable(code: str) -> bool:
+    """
+    Return True when the symbol code is safe to count via PDF text extraction.
+
+    A code is text-safe when it is at least 2 characters long and contains at
+    least one digit.  This ensures it is specific enough to avoid false matches
+    against common words or single Swedish letters (Å, A, T …) that would
+    produce thousands of spurious hits.
+
+    Examples:
+      "P11"  → True   (letter + digits)
+      "D1"   → True   (letter + digit)
+      "V17"  → True
+      "F1"   → True
+      "Å"    → False  (single letter — use vision)
+      "A"    → False  (too common)
+      "OT"   → False  (no digit — could appear in Swedish text)
+    """
+    return len(code) >= 2 and bool(re.search(r"\d", code))
+
+
 def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> dict:
     """
     Two-pass AI extraction:
@@ -667,28 +688,60 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     length_items = [c for c in raw.get("components", [])
                     if c.get("measurement_type", "count") != "count"]
 
-    # ── Counting passes — legend physically removed from image ─────────────────
+    # ── Counting passes ────────────────────────────────────────────────────────
     if count_items:
         pdf_stem = Path(drawing_pdf_path).stem
-        print(f"\n  [AI] Counting (3 passes) for {pdf_stem}:")
+        print(f"\n  [AI] Counting for {pdf_stem}:")
 
-        # Find legend bbox to exclude from text counting
+        # Find legend bbox once (used by text extraction and masked image)
         legend_bbox = _find_legend_bbox(full_b64)
         if legend_bbox:
-            print(f"  Legend box found: {legend_bbox} — excluding from text count")
+            print(f"  Legend box found: {legend_bbox}")
         else:
-            print(f"  No legend box found — counting full page text")
+            print(f"  No legend box found — using FÖRKLARINGAR text detection only")
 
-        # Count by extracting text directly from the PDF — exact, zero tokens.
-        text_counts = _count_from_pdf_text(drawing_pdf_path, count_items, legend_bbox)
-        print(f"  Text counts: { {c['code']: text_counts.get(c['code'],0) for c in count_items} }")
+        # ── Split: text-safe vs vision-only symbols ────────────────────────────
+        # A code is text-safe when it contains at least one digit and is ≥2 chars:
+        # that makes it unique enough that PDF text search won't produce false
+        # matches against common words or single letters.
+        text_items  = [c for c in count_items if _is_text_countable(c["code"])]
+        vision_items = [c for c in count_items if not _is_text_countable(c["code"])]
 
-        # All three grids are the same exact value from text extraction.
-        grid_a = grid_b = grid_c = text_counts
+        # Text extraction — exact, zero tokens
+        if text_items:
+            text_counts = _count_from_pdf_text(drawing_pdf_path, text_items, legend_bbox)
+            print(f"  Text counts (exact): { {c['code']: text_counts.get(c['code'], 0) for c in text_items} }")
+        else:
+            text_counts = {}
 
-        print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result")
+        # Vision counting — 3 independent passes for majority-vote confidence.
+        # Uses the full unmasked image so Claude can see what the symbol looks
+        # like in the legend before searching for it in the floor plan.
+        vision_a: dict[str, int] = {}
+        vision_b: dict[str, int] = {}
+        vision_c: dict[str, int] = {}
+        if vision_items:
+            print(f"  Vision counting for {len(vision_items)} graphical symbol(s): "
+                  f"{[c['code'] for c in vision_items]}")
+            for c in vision_items:
+                code_v, name_v = c["code"], c["name"]
+                va = _count_one_symbol(full_b64, code_v, name_v)
+                vb = _count_one_symbol(full_b64, code_v, name_v)
+                vc = _count_one_symbol(full_b64, code_v, name_v)
+                vision_a[code_v] = va
+                vision_b[code_v] = vb
+                vision_c[code_v] = vc
+                print(f"    {code_v}: A={va} B={vb} C={vc}")
+
+        # Merge into three grids (text items are identical across all three)
+        grid_a = {**text_counts, **vision_a}
+        grid_b = {**text_counts, **vision_b}
+        grid_c = {**text_counts, **vision_c}
+
+        print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result  method")
         for item in count_items:
             code = item["code"]
+            is_text = _is_text_countable(code)
 
             a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
             if a == b == c:
@@ -707,8 +760,9 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
             item["count_grid_c"]     = c
             item["count_confidence"] = confidence
             item["quantity"]         = final
+            method = "text" if is_text else "vision"
             icon = {"high": "✓", "medium": "⚠", "low": "✗"}[confidence]
-            print(f"  {code:<12} {a:>4} {b:>4} {c:>4}  {final} {icon}")
+            print(f"  {code:<12} {a:>4} {b:>4} {c:>4}  {final} {icon}  [{method}]")
 
     # Reassemble components list
     raw["components"] = count_items + length_items
