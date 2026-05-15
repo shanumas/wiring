@@ -421,6 +421,9 @@ Instructions:
 3. Read the drawing scale from the title block.
 4. Capture width/size annotations (e.g. "KS 400" → width_mm 400).
 5. Capture mounting heights (ÖK = top of tray, UK = bottom, in mm ÖFG).
+   IMPORTANT: each height annotation belongs to the component in the SAME legend row.
+   Never carry a height from one legend row to an adjacent row.
+   ÖK means the TOP edge of the item; UK means the BOTTOM edge. Do not swap them.
 6. Note fire ratings (e.g. "EI 30-C") if shown alongside a component.
 
 YOUR RESPONSE MUST BE A RAW JSON OBJECT WITH NO TEXT BEFORE OR AFTER IT.
