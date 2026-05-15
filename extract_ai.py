@@ -419,7 +419,14 @@ Instructions:
    fixed lengths. They must ALWAYS be classified as "count" (antal), NOT "length".
    Even though they involve cables, they are ordered by piece, not by metre.
 3. Read the drawing scale from the title block.
-4. Capture width/size annotations (e.g. "KS 400" → width_mm 400).
+4. Capture width/size annotations.  The code field must ONLY contain the bare
+   letter code (e.g. "KS", "FBK", "KR") — never include the width number or
+   mounting height in the code.  Extract those separately:
+     "KS 400"          → code "KS",  width_mm 400
+     "KS 400 UK=2700"  → code "KS",  width_mm 400, uk_height_mm 2700
+     "FBK 100"         → code "FBK", width_mm 100
+   If the same code appears at multiple mounting heights, return ONE entry per
+   distinct height combination, each with the correct ok_height_mm / uk_height_mm.
 5. Capture mounting heights (ÖK = top of tray, UK = bottom, in mm ÖFG).
    IMPORTANT: each height annotation belongs to the component in the SAME legend row.
    Never carry a height from one legend row to an adjacent row.
@@ -801,9 +808,15 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     raw = _ask_full_drawing(full_b64, lib_block)
 
     # Separate count vs length components
-    count_items  = [c for c in raw.get("components", [])
+    # Also strip codes that are purely letters with no digits — these are
+    # architectural grid references (A, B, AA …) not real component codes.
+    _GRID_REF = re.compile(r'^[A-ZÅÄÖ]{1,3}$')
+    raw_comps = [c for c in raw.get("components", [])
+                 if not _GRID_REF.match(str(c.get("code", "")).strip())]
+
+    count_items  = [c for c in raw_comps
                     if c.get("measurement_type", "count") == "count"]
-    length_items = [c for c in raw.get("components", [])
+    length_items = [c for c in raw_comps
                     if c.get("measurement_type", "count") != "count"]
 
     # ── Discover hyphen-suffix variants missed by Pass 1 ──────────────────────

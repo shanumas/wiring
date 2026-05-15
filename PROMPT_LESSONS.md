@@ -71,6 +71,29 @@ sits visually close to V17's row and Claude attributed it to V17.
 
 ---
 
+## L006 — Code field must not include width or height annotations (2026-05-15)
+
+**Drawing**: 2.pdf (cable tray routing plan)  
+**Failure**: `type="KS 400"`, `type="KS 400 (OK 3000)"` instead of `code="KS"` + `width_mm=400`.  
+**Root cause**: Claude treated the full label "KS 400" as the component code.  
+**Fix added to prompt**:
+> "The code field must ONLY contain the bare letter code (KS, FBK, KR).
+> Extract width and height separately. KS 400 → code KS, width_mm 400."
+
+---
+
+## L007 — Architectural grid reference letters are not components (2026-05-15)
+
+**Drawing**: 2.pdf  
+**Failure**: AA=6, A=6, B=0 appeared as count items. These are zone/grid labels on
+the drawing border, not installed components.  
+**Root cause**: Single/double uppercase letters without digits are grid references on
+Swedish architectural/engineering drawings (column A, B, C … row 1, 2, 3).  
+**Fix in code**: After Pass 1, strip any code matching `^[A-ZÅÄÖ]{1,3}$` (pure letters,
+no digits) from both count_items and length_items.
+
+---
+
 ## Template for new lessons
 
 ```
