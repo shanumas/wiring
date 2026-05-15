@@ -996,7 +996,7 @@
       const hStr     = hParts.length ? hParts.join(' · ') + ' mm ÖFG' : '';
       const details  = [sizeStr, vertStr, hStr, fireStr].filter(Boolean).join(' &nbsp;·&nbsp; ');
 
-      // Validator breakdown for AI count items
+      // Validator breakdown for AI count items (A/B/C = Claude, D = Qwen)
       let validatorHtml = '';
       if (extractionMode === 'ai' && s.count_grid_a != null) {
         const conf = s.count_confidence || 'unknown';
@@ -1007,8 +1007,12 @@
         const confColor  = isHigh ? '#2a7a3a' : isMedium ? '#8a6200' : '#9c2c2c';
         const manualNote = isLow
           ? `<span style="font-weight:600"> — needs manual check</span>` : '';
+        // Pass D (Qwen) shown only when present; greyed out when absent
+        const dPart = s.count_grid_d != null
+          ? ` <span title="Qwen validator" style="color:#5a3a7a">D:${s.count_grid_d}</span>`
+          : ` <span title="Qwen not configured" style="color:#aaaaaa">D:—</span>`;
         validatorHtml = `<div class="comp-validators" style="color:${confColor}">
-          ${icon} A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}${manualNote}
+          ${icon} A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}${dPart}${manualNote}
         </div>`;
       }
 

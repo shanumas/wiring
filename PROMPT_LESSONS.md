@@ -1,5 +1,25 @@
 # Prompt Lessons — Electrical Drawing Extraction
 
+## Setup — Qwen pass D (cross-model validator)
+
+Pass D calls Qwen VL via OpenRouter as an independent second opinion alongside
+the three Claude passes (A/B/C).  Enable it by setting:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...          # required
+export QWEN_MODEL=qwen/qwen2.5-vl-72b-instruct  # optional, this is the default
+```
+
+Confidence with D enabled:
+- **high**   = all 4 validators agree (A==B==C==D)
+- **medium** = 3 of 4 agree (one outlier)
+- **low**    = no clear majority — needs manual review
+
+Without OPENROUTER_API_KEY: D shows as "—" in the UI and confidence falls back
+to the 3-vote logic (high=3/3, medium=2/3, low=all differ).
+
+---
+
 Each entry records a failure, what caused it, and what rule was added to the prompt.
 This file is the source of truth for **why** each clause in `extract_ai.py` exists.
 When fine-tuning, pair each lesson with the corrected sample in `training_data/samples/`.

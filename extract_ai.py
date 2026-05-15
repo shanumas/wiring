@@ -22,12 +22,14 @@ import anthropic
 import base64
 import hashlib
 import json
+import os
 import re
 import fitz
 from pathlib import Path
 
 _CLIENT = None        # lazy-init so import doesn't fail when key is absent
 _CLIENT_HAIKU = None  # cheaper model for counting passes
+_CLIENT_QWEN  = None  # OpenRouter client for Qwen pass D
 
 AI_CACHE_DIR = Path("ai_cache")
 AI_CACHE_DIR.mkdir(exist_ok=True)
@@ -44,8 +46,36 @@ def _client_haiku():
         _CLIENT_HAIKU = anthropic.Anthropic()
     return _CLIENT_HAIKU
 
+def _client_qwen():
+    """
+    Lazy-init OpenAI-compatible client pointing at OpenRouter.
+    Returns None (instead of raising) if OPENROUTER_API_KEY is not set,
+    so the rest of the pipeline degrades gracefully.
+    """
+    global _CLIENT_QWEN
+    if _CLIENT_QWEN is None:
+        key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not key:
+            return None
+        try:
+            from openai import OpenAI as _OpenAI
+            _CLIENT_QWEN = _OpenAI(
+                api_key=key,
+                base_url="https://openrouter.ai/api/v1",
+            )
+        except Exception:
+            return None
+    return _CLIENT_QWEN
+
 SONNET = "claude-sonnet-4-6"
 HAIKU  = "claude-haiku-4-5-20251001"
+
+# Qwen model via OpenRouter — change to any hosted Qwen VL you have access to.
+# Candidates (OpenRouter model IDs):
+#   qwen/qwen2.5-vl-72b-instruct   ← best quality, higher cost
+#   qwen/qwen2.5-vl-7b-instruct    ← cheaper, still strong
+#   qwen/qwen-vl-plus              ← Alibaba's managed endpoint
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen/qwen2.5-vl-72b-instruct")
 
 
 def _pdf_hash(pdf_path: str) -> str:
@@ -599,6 +629,57 @@ def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
     return {c["code"]: _count_one_symbol_legend(b64, c["code"], c["name"]) for c in codes}
 
 
+def _count_one_symbol_qwen(b64: str, code: str, name: str) -> int | None:
+    """
+    Pass D — count one symbol using Qwen VL via OpenRouter.
+
+    Returns None if the Qwen client is unavailable (key not set, API error, …)
+    so the caller can skip pass D without breaking the majority vote.
+
+    The prompt is intentionally phrased differently from passes A/B/C so that
+    Qwen acts as a truly independent validator rather than echoing Claude's
+    framing.
+    """
+    client = _client_qwen()
+    if client is None:
+        return None
+
+    prompt = f"""You are analysing a Swedish building services floor plan drawing.
+
+Your task: count how many instances of the component "{code}" ({name}) are
+installed in the building floor plan.
+
+Rules:
+1. The drawing has a legend box (often labelled FÖRKLARINGAR or BETECKNINGAR)
+   showing example symbols. Do NOT count anything inside that legend box.
+2. Do NOT count symbols in the title block or any revision/annotation table.
+3. Count only symbols that are physically placed inside rooms or corridors.
+4. If you are not sure whether a mark is this symbol, do not count it.
+
+Reply with ONLY a JSON object and nothing else:
+{{"{code}": <integer count>}}"""
+
+    try:
+        resp = client.chat.completions.create(
+            model=QWEN_MODEL,
+            max_tokens=64,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+        )
+        text = resp.choices[0].message.content or ""
+        result = _extract_json(text)
+        return int(result.get(code, 0))
+    except Exception as exc:
+        print(f"  [Qwen] pass D failed for {code}: {exc}")
+        return None
+
+
 def _verify_presence(b64: str, codes: list[dict]) -> set[str]:
     """
     Ask Claude which codes are actually present in the floor plan.
@@ -902,12 +983,19 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
         else:
             text_counts = {}
 
-        # Vision counting — 3 independent passes for majority-vote confidence.
-        # Uses the full unmasked image so Claude can see what the symbol looks
-        # like in the legend before searching for it in the floor plan.
+        # Vision counting — 3 Claude passes + 1 Qwen pass for cross-model validation.
+        # Pass D uses Qwen VL via OpenRouter; it is skipped if OPENROUTER_API_KEY
+        # is not set (value stored as None in the grid).
+        qwen_available = _client_qwen() is not None
+        if qwen_available:
+            print(f"  Qwen pass D enabled (model: {QWEN_MODEL})")
+        else:
+            print(f"  Qwen pass D disabled — set OPENROUTER_API_KEY to enable")
+
         vision_a: dict[str, int] = {}
         vision_b: dict[str, int] = {}
         vision_c: dict[str, int] = {}
+        vision_d: dict[str, int | None] = {}
         if vision_items:
             print(f"  Vision counting for {len(vision_items)} graphical symbol(s): "
                   f"{[c['code'] for c in vision_items]}")
@@ -916,41 +1004,65 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
                 va = _count_one_symbol(full_b64, code_v, name_v)
                 vb = _count_one_symbol(full_b64, code_v, name_v)
                 vc = _count_one_symbol(full_b64, code_v, name_v)
+                vd = _count_one_symbol_qwen(full_b64, code_v, name_v)
                 vision_a[code_v] = va
                 vision_b[code_v] = vb
                 vision_c[code_v] = vc
-                print(f"    {code_v}: A={va} B={vb} C={vc}")
+                vision_d[code_v] = vd
+                d_str = str(vd) if vd is not None else "—"
+                print(f"    {code_v}: A={va} B={vb} C={vc} D={d_str}")
 
-        # Merge into three grids (text items are identical across all three)
+        # Merge into four grids (text items are identical across all passes)
         grid_a = {**text_counts, **vision_a}
         grid_b = {**text_counts, **vision_b}
         grid_c = {**text_counts, **vision_c}
+        # For text items, pass D equals text count (exact); for vision, use Qwen result
+        grid_d: dict[str, int | None] = {}
+        for code_t in text_counts:
+            grid_d[code_t] = text_counts[code_t]   # text is deterministic; D = same
+        for code_v, vd in vision_d.items():
+            grid_d[code_v] = vd
 
-        print(f"\n  {'Code':<12} {'A':>4} {'B':>4} {'C':>4}  result  method")
+        header = f"  {'Code':<12} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  method"
+        print(f"\n{header}")
         for item in count_items:
             code = item["code"]
             is_text = _is_text_countable(code)
 
-            a, b, c = grid_a.get(code, 0), grid_b.get(code, 0), grid_c.get(code, 0)
-            if a == b == c:
-                final, confidence = a, "high"
-            elif a == b:
-                final, confidence = a, "medium"
-            elif a == c:
-                final, confidence = a, "medium"
-            elif b == c:
-                final, confidence = b, "medium"
+            a = grid_a.get(code, 0)
+            b = grid_b.get(code, 0)
+            c = grid_c.get(code, 0)
+            d = grid_d.get(code)          # None when Qwen unavailable
+
+            # Majority vote across available validators
+            # With D present: 4 votes, need ≥3 agreement for "high"
+            # Without D (None): fall back to 3-vote logic
+            votes = [a, b, c] + ([d] if d is not None else [])
+            counts_freq: dict[int, int] = {}
+            for v in votes:
+                counts_freq[v] = counts_freq.get(v, 0) + 1
+            best_val  = max(counts_freq, key=lambda v: (counts_freq[v], -v))
+            best_count = counts_freq[best_val]
+            n_votes   = len(votes)
+
+            if best_count == n_votes:
+                confidence = "high"
+            elif best_count >= n_votes - 1:
+                confidence = "medium"
             else:
-                final, confidence = a, "low"
+                confidence = "low"
+            final = best_val
 
             item["count_grid_a"]     = a
             item["count_grid_b"]     = b
             item["count_grid_c"]     = c
+            item["count_grid_d"]     = d          # None when Qwen unavailable
             item["count_confidence"] = confidence
             item["quantity"]         = final
             method = "text" if is_text else "vision"
-            icon = {"high": "✓", "medium": "⚠", "low": "✗"}[confidence]
-            print(f"  {code:<12} {a:>4} {b:>4} {c:>4}  {final} {icon}  [{method}]")
+            icon   = {"high": "✓", "medium": "⚠", "low": "✗"}[confidence]
+            d_str  = f"{d:>4}" if d is not None else "   —"
+            print(f"  {code:<12} {a:>4} {b:>4} {c:>4} {d_str}  {final} {icon}  [{method}]")
 
     # Reassemble components list
     raw["components"] = count_items + length_items
@@ -1034,9 +1146,10 @@ def _normalise(raw: dict, page_w: float, page_h: float) -> dict:
             s["count"] = max(0, int(round(qty)))
             # Propagate per-grid validator counts so the UI can display them
             if "count_grid_a" in item:
-                s["count_grid_a"]    = item["count_grid_a"]
-                s["count_grid_b"]    = item["count_grid_b"]
-                s["count_grid_c"]    = item["count_grid_c"]
+                s["count_grid_a"]     = item["count_grid_a"]
+                s["count_grid_b"]     = item["count_grid_b"]
+                s["count_grid_c"]     = item["count_grid_c"]
+                s["count_grid_d"]     = item.get("count_grid_d")  # None if Qwen absent
                 s["count_confidence"] = item.get("count_confidence", "unknown")
         summary.append(s)
 
