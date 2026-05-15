@@ -146,13 +146,21 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
     counts = {}
     for c in codes:
         code = c["code"]
-        # Require the code is not followed by a digit, so "D1" won't match
-        # inside "D10" or "D15".  Spans are joined with "|" (a non-alphanumeric
-        # separator) so that a letter at the END of one span cannot merge with
-        # the START of a code span (e.g. "A" + "P12" → "A|P12", not "AP12").
-        # Packed runs within a single span, like "P11P11D1F2", still work
-        # because there is no separator inside a span.
-        pattern = re.escape(code) + r"(?!\d)"
+        # Three boundary guards, in order of precedence:
+        # • Lookbehind (?<![A-Za-z…]) — code must not be preceded by a letter.
+        #   Digits are allowed before (packed spans: "P11P11N1" → N1 matches).
+        #   Spans are joined with "|" so cross-span letter bleed is prevented.
+        # • Lookahead (?!\d) — code must not be followed by a digit, so "D1"
+        #   won't match inside "D10" or "SLÖJD15" (the 1 is followed by 5).
+        # • Lookahead (?!-[A-Z0-9]) — code must not be followed by a hyphen
+        #   then alphanumeric, so "N1" won't match inside "N1-R".
+        #   A plain letter after the code IS still allowed, which handles packed
+        #   spans like "N1F2" where F starts the next code.
+        pattern = (
+            r"(?<![A-Za-z\u00C0-\u024F])"
+            + re.escape(code)
+            + r"(?!\d)(?!-[A-Z0-9])"
+        )
         counts[code] = len(re.findall(pattern, full_text))
     return counts
 
@@ -625,6 +633,73 @@ no markdown. The first character must be {{ and the last must be }}.
     return flat
 
 
+def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
+    """
+    Scan the PDF text for hyphen-suffix variants of already-identified codes
+    that Pass 1 missed.  E.g. if Pass 1 returned "N1" but the drawing also
+    contains "N1-R", inject a synthetic "N1-R" component so it gets counted.
+
+    The injected item inherits name/unit/notes from its base code and gets
+    measurement_type="count".  Zero API tokens consumed.
+    """
+    if not count_items:
+        return count_items
+
+    # Build the full drawing-body text (reuse same FÖRKLARINGAR detection)
+    doc  = fitz.open(pdf_path)
+    page = doc[0]
+    legend_y_cut: float | None = None
+    for blk in page.get_text("dict")["blocks"]:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk["lines"]:
+            for sp in ln["spans"]:
+                if re.search(r'F.RKLARINGAR|FÖRKLARINGAR', sp["text"], re.IGNORECASE):
+                    legend_y_cut = sp["bbox"][1] - 120
+                    break
+            if legend_y_cut is not None:
+                break
+        if legend_y_cut is not None:
+            break
+
+    parts: list[str] = []
+    for blk in page.get_text("dict")["blocks"]:
+        if blk.get("type") != 0:
+            continue
+        for ln in blk["lines"]:
+            for sp in ln["spans"]:
+                if legend_y_cut is not None and sp["bbox"][1] >= legend_y_cut:
+                    continue
+                parts.append(sp["text"])
+    full_text = "|".join(parts)
+    doc.close()
+
+    known_codes = {c["code"] for c in count_items}
+    extras: list[dict] = []
+
+    for item in count_items:
+        base = re.escape(item["code"])
+        # Find all distinct "{base_code}-{suffix}" patterns in the drawing text
+        for m in re.finditer(
+            r"(?<![A-Za-z\u00C0-\u024F])" + base + r"-([A-Z0-9]+)(?![\w-])",
+            full_text,
+        ):
+            variant = item["code"] + "-" + m.group(1)
+            if variant not in known_codes:
+                known_codes.add(variant)
+                extras.append({
+                    "code":             variant,
+                    "name":             item.get("name", variant) + f" (variant of {item['code']})",
+                    "measurement_type": "count",
+                    "unit":             "pcs",
+                    "notes":            item.get("notes", ""),
+                    "quantity":         0,
+                })
+                print(f"  [variant] discovered {variant} from base {item['code']}")
+
+    return count_items + extras
+
+
 def _is_text_countable(code: str) -> bool:
     """
     Return True when the symbol code is safe to count via PDF text extraction.
@@ -687,6 +762,12 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
                     if c.get("measurement_type", "count") == "count"]
     length_items = [c for c in raw.get("components", [])
                     if c.get("measurement_type", "count") != "count"]
+
+    # ── Discover hyphen-suffix variants missed by Pass 1 ──────────────────────
+    # Claude often identifies "N1" but not "N1-R" as a separate component.
+    # Scan the PDF text for any "{known_code}-{suffix}" patterns and inject
+    # them as extra count items so they get properly counted.
+    count_items = _inject_variant_codes(drawing_pdf_path, count_items)
 
     # ── Counting passes ────────────────────────────────────────────────────────
     if count_items:
