@@ -93,24 +93,46 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
     page = doc[0]
     w, h = page.rect.width, page.rect.height
 
-    # ── 1. Locate the FÖRKLARINGAR label in the PDF text stream ──────────────
-    # In rotated PDFs the y-axis from get_text("dict") runs in a transformed
-    # coordinate space; we find the label and use y1 - 120 pts as a cut-off
-    # so that symbol codes listed in rows just above the header are excluded too.
-    legend_y_cut = None
+    # ── 1. Locate the FÖRKLARINGAR label and the title block ─────────────────
+    # We compute two y cut-offs and use the lower (earlier) one:
+    #
+    # • legend_y_cut   — text at/above FÖRKLARINGAR header (symbol table)
+    # • titleblk_y_cut — text at/above the drawing stamp / title block
+    #                    (Swedish drawings include RITAD AV, DATUM,
+    #                     FÖRFRÅGNINGSUNDERLAG etc. in a lower border strip;
+    #                     component codes printed there must not be counted)
+    #
+    # The actual cut-off is min(legend_y_cut, titleblk_y_cut).
+
+    _TITLEBLK_RE = re.compile(
+        r'RITAD|FÖRFRÅGNINGSUNDERLAG|RELATIONSRITNING|BYGGHANDLING'
+        r'|BYGGLOVSRITNING|UTREDNINGSHANDLING|FÖRSLAGSHANDLING'
+        r'|HANDLÄGGARE|ANSVARIG',
+        re.IGNORECASE,
+    )
+
+    legend_y_cut   = None
+    titleblk_y_cut = None
+
     for blk in page.get_text("dict")["blocks"]:
         if blk.get("type") != 0:
             continue
         for ln in blk["lines"]:
             for sp in ln["spans"]:
+                txt = sp["text"]
+                y   = sp["bbox"][1]
                 if re.search(r'F.RKLARINGAR|FÖRKLARINGAR|FORKLARINGAR|LEGEND',
-                             sp["text"], re.IGNORECASE):
-                    legend_y_cut = sp["bbox"][1] - 120   # include a safe buffer
-                    break
-            if legend_y_cut is not None:
-                break
-        if legend_y_cut is not None:
-            break
+                             txt, re.IGNORECASE):
+                    if legend_y_cut is None or y < legend_y_cut:
+                        legend_y_cut = y - 120   # safe buffer above header row
+
+                if _TITLEBLK_RE.search(txt):
+                    if titleblk_y_cut is None or y < titleblk_y_cut:
+                        titleblk_y_cut = y
+
+    # Use the more conservative (lower y) of the two cuts
+    cuts = [c for c in (legend_y_cut, titleblk_y_cut) if c is not None]
+    legend_y_cut = min(cuts) if cuts else None
 
     # ── 2. Build exclusion rect from Claude-supplied legend_bbox (if any) ────
     excl = None
@@ -406,6 +428,12 @@ Instructions:
    do NOT count symbols shown inside the legend box itself.
    IMPORTANT: Only use codes that actually appear in the component library above
    or that you can clearly read from the drawing labels. Do not invent codes.
+   Do NOT include as codes:
+   • Cable specification labels (e.g. "FRHF 3G1,5", "5G2,5", "3×2,5") — these
+     describe the cable type on a route, not an installed component.
+   • Mounting height annotations ending in ÖFG or ÖFK (e.g. "1000ÖFG", "1900ÖFG").
+   • Multi-word annotation phrases (e.g. "VIA NÖDSTOPP", "MED STANDARDCYLINDER").
+   • Architectural drawing grid references printed in the margins (A, B, C, 1, 2 …).
 2. For each code, check the component library above:
    • measurement_type "count"  → count all instances placed in the floor plan
      (rooms, corridors, shafts). Exclude any instance inside the legend /
@@ -667,19 +695,31 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
     # ── Build drawing-body text ───────────────────────────────────────────────
     doc  = fitz.open(pdf_path)
     page = doc[0]
-    legend_y_cut: float | None = None
+
+    _TITLEBLK_RE2 = re.compile(
+        r'RITAD|FÖRFRÅGNINGSUNDERLAG|RELATIONSRITNING|BYGGHANDLING'
+        r'|BYGGLOVSRITNING|UTREDNINGSHANDLING|FÖRSLAGSHANDLING'
+        r'|HANDLÄGGARE|ANSVARIG',
+        re.IGNORECASE,
+    )
+    legend_y_cut:   float | None = None
+    titleblk_y_cut: float | None = None
+
     for blk in page.get_text("dict")["blocks"]:
         if blk.get("type") != 0:
             continue
         for ln in blk["lines"]:
             for sp in ln["spans"]:
-                if re.search(r'F.RKLARINGAR|FÖRKLARINGAR', sp["text"], re.IGNORECASE):
-                    legend_y_cut = sp["bbox"][1] - 120
-                    break
-            if legend_y_cut is not None:
-                break
-        if legend_y_cut is not None:
-            break
+                txt, y = sp["text"], sp["bbox"][1]
+                if re.search(r'F.RKLARINGAR|FÖRKLARINGAR', txt, re.IGNORECASE):
+                    if legend_y_cut is None or y < legend_y_cut:
+                        legend_y_cut = y - 120
+                if _TITLEBLK_RE2.search(txt):
+                    if titleblk_y_cut is None or y < titleblk_y_cut:
+                        titleblk_y_cut = y
+
+    cuts = [c for c in (legend_y_cut, titleblk_y_cut) if c is not None]
+    legend_y_cut = min(cuts) if cuts else None
 
     # Two text buffers:
     # • full_text  — all spans; used for hyphen-variant discovery (variants of
@@ -807,12 +847,20 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     full_b64 = _page_to_b64(drawing_pdf_path, max_px=2400)
     raw = _ask_full_drawing(full_b64, lib_block)
 
-    # Separate count vs length components
-    # Also strip codes that are purely letters with no digits — these are
-    # architectural grid references (A, B, AA …) not real component codes.
-    _GRID_REF = re.compile(r'^[A-ZÅÄÖ]{1,3}$')
+    # Separate count vs length components.
+    # Strip anything that is clearly not a component code: codes containing
+    # spaces (annotation phrases like "VIA NÖDSTOPP"), height-only tokens
+    # (ends with ÖFG/ÖFK), and cable spec labels (contains "G" between digits,
+    # e.g. "3G1,5").
+    _NOT_CODE = re.compile(
+        r'\s'                        # any whitespace → phrase, not a code
+        r'|ÖFG$|ÖFK$'               # mounting height annotations
+        r'|\d+G\d'                   # cable spec: 3G1,5 / 5G2,5
+        r'|\d{3,}'                   # 3+ consecutive digits (room labels A112)
+        r'|\.\w+\.'                  # dot-separated tokens: TEXT.SLO.10
+    )
     raw_comps = [c for c in raw.get("components", [])
-                 if not _GRID_REF.match(str(c.get("code", "")).strip())]
+                 if not _NOT_CODE.search(str(c.get("code", "")).strip())]
 
     count_items  = [c for c in raw_comps
                     if c.get("measurement_type", "count") == "count"]

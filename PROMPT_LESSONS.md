@@ -94,6 +94,39 @@ no digits) from both count_items and length_items.
 
 ---
 
+## L008 — L007 filter was too broad; replaced with structural code filter (2026-05-15)
+
+**Drawing**: 3.pdf  
+**Failure**: L007 regex `^[A-ZÅÄÖ]{1,3}$` would have removed KS, FBK, KR (2.pdf) and
+FBA, NS, DA, KO, NB, HL (3.pdf) — all real component codes with no digits.  
+**Fix in code**: Replaced with a structural filter on code shape:
+- Contains whitespace → phrase (VIA NÖDSTOPP)
+- Ends in ÖFG/ÖFK → height annotation (1000ÖFG)
+- Pattern `\d+G\d` → cable spec (3G1,5 / 5G2,5)
+- 3+ consecutive digits → room label (A112)
+- Two dots: `\.\w+\.` → dot-separated tokens (TEXT.SLO.10)
+
+**Fix added to prompt**:
+> "Do NOT include cable spec labels (FRHF 3G1,5), height annotations (1000ÖFG),
+> multi-word phrases (VIA NÖDSTOPP), or drawing grid references (A, B, C…)."
+
+---
+
+## L009 — Title block text bleeds into component counts (2026-05-15)
+
+**Drawing**: 3.pdf  
+**Failure**: FBA=+2, NS=+1, P=+1 overcounted because those codes appear in the
+Swedish title block stamp (y=1615–2000), which is between the drawing body and
+the FÖRKLARINGAR section. The FÖRKLARINGAR cut alone (y=2002) did not exclude it.  
+**Root cause**: Swedish engineering drawings have a title block below the drawing
+that contains FÖRFRÅGNINGSUNDERLAG / RELATIONSRITNING checkboxes, RITAD AV, DATUM
+etc. Component codes printed there must not be counted.  
+**Fix in code**: `_count_from_pdf_text` and `_inject_variant_codes` now detect
+title block markers (RITAD, FÖRFRÅGNINGSUNDERLAG, HANDLÄGGARE …) and set a
+`titleblk_y_cut`. The effective cut-off is `min(legend_y_cut, titleblk_y_cut)`.
+
+---
+
 ## Template for new lessons
 
 ```
