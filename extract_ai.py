@@ -635,17 +635,21 @@ no markdown. The first character must be {{ and the last must be }}.
 
 def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
     """
-    Scan the PDF text for hyphen-suffix variants of already-identified codes
-    that Pass 1 missed.  E.g. if Pass 1 returned "N1" but the drawing also
-    contains "N1-R", inject a synthetic "N1-R" component so it gets counted.
+    Supplement the Pass-1 component list by scanning the PDF drawing-body text
+    for component codes that Claude missed.
 
-    The injected item inherits name/unit/notes from its base code and gets
-    measurement_type="count".  Zero API tokens consumed.
+    Two discovery passes (zero tokens each):
+
+    1. Hyphen-suffix variants — for every known code X, find any "X-Y" in the
+       text and inject it (e.g. "N1" → discovers "N1-R").
+
+    2. General code discovery — scan the whole drawing body for tokens that
+       look like component codes (1–4 uppercase letters + 1–2 digits, optional
+       hyphen suffix) and inject any not already in the list.  Tokens with 3+
+       digit suffixes are skipped because those are typically room labels
+       (A113, A117 …) not components.
     """
-    if not count_items:
-        return count_items
-
-    # Build the full drawing-body text (reuse same FÖRKLARINGAR detection)
+    # ── Build drawing-body text ───────────────────────────────────────────────
     doc  = fitz.open(pdf_path)
     page = doc[0]
     legend_y_cut: float | None = None
@@ -677,25 +681,40 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
     known_codes = {c["code"] for c in count_items}
     extras: list[dict] = []
 
-    for item in count_items:
+    def _add(code: str, name: str, notes: str = "") -> None:
+        if code not in known_codes:
+            known_codes.add(code)
+            extras.append({
+                "code":             code,
+                "name":             name,
+                "measurement_type": "count",
+                "unit":             "pcs",
+                "notes":            notes,
+                "quantity":         0,
+            })
+            print(f"  [auto-discover] {code}: {name}")
+
+    # ── Pass 1: hyphen-suffix variants of known codes ─────────────────────────
+    for item in list(count_items):
         base = re.escape(item["code"])
-        # Find all distinct "{base_code}-{suffix}" patterns in the drawing text
         for m in re.finditer(
-            r"(?<![A-Za-z\u00C0-\u024F])" + base + r"-([A-Z0-9]+)(?![\w-])",
+            r"(?<![A-Za-z\u00C0-\u024F])" + base + r"-([A-Z0-9]+)(?!\d)(?!-[A-Z0-9])",
             full_text,
         ):
             variant = item["code"] + "-" + m.group(1)
-            if variant not in known_codes:
-                known_codes.add(variant)
-                extras.append({
-                    "code":             variant,
-                    "name":             item.get("name", variant) + f" (variant of {item['code']})",
-                    "measurement_type": "count",
-                    "unit":             "pcs",
-                    "notes":            item.get("notes", ""),
-                    "quantity":         0,
-                })
-                print(f"  [variant] discovered {variant} from base {item['code']}")
+            _add(variant, item.get("name", variant) + f" (variant of {item['code']})",
+                 item.get("notes", ""))
+
+    # ── Pass 2: general code scan ─────────────────────────────────────────────
+    # Matches codes with 1–2 digit suffix (component codes).
+    # 3+ digits → room labels → skipped.
+    general_pat = re.compile(
+        r"(?<![A-Za-z\u00C0-\u024F])"
+        r"([A-ZÅÄÖ]{1,4}\d{1,2}(?:-[A-Z0-9]{1,3})?)"
+        r"(?!\d)(?!-[A-Z0-9])"
+    )
+    for m in general_pat.finditer(full_text):
+        _add(m.group(1), m.group(1))   # name = code until library clarifies
 
     return count_items + extras
 
