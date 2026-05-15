@@ -1,0 +1,10 @@
+{
+  "wiring_drawings": {
+    "file_name": "finetune_llamafactory.jsonl",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    }
+  }
+}

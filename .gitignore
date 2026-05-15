@@ -5,3 +5,6 @@ __pycache__/
 components.json
 estimate.json
 pdf/
+ai_cache/
+training_data/samples/
+training_data/index.jsonl
