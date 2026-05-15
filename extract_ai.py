@@ -414,6 +414,10 @@ Instructions:
      scale printed in the title block (e.g. "SKALA 1:50").
    • Code not in library → use your judgement: fixtures/outlets/sensors → count;
      trays/pipes/conduits → length.
+   IMPORTANT: Prefabricated / plug-in wiring systems (e.g. WAGO Sladdställ,
+   snabbkopplingssystem, pendelupphängning) are delivered from the factory in
+   fixed lengths. They must ALWAYS be classified as "count" (antal), NOT "length".
+   Even though they involve cables, they are ordered by piece, not by metre.
 3. Read the drawing scale from the title block.
 4. Capture width/size annotations (e.g. "KS 400" → width_mm 400).
 5. Capture mounting heights (ÖK = top of tray, UK = bottom, in mm ÖFG).
@@ -633,7 +637,8 @@ no markdown. The first character must be {{ and the last must be }}.
     return flat
 
 
-def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
+def _inject_variant_codes(pdf_path: str, count_items: list[dict],
+                           length_codes: set[str] | None = None) -> list[dict]:
     """
     Supplement the Pass-1 component list by scanning the PDF drawing-body text
     for component codes that Claude missed.
@@ -666,7 +671,16 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
         if legend_y_cut is not None:
             break
 
-    parts: list[str] = []
+    # Two text buffers:
+    # • full_text  — all spans; used for hyphen-variant discovery (variants of
+    #               known codes must be counted regardless of text colour).
+    # • dark_text  — only spans whose text colour is dark (≤ 0x404040); used
+    #               for general code discovery to skip room labels / grid text
+    #               that is deliberately printed in a light grey font.
+    _DARK_THRESHOLD = 0x404040   # colours above this are "light" (grey, etc.)
+
+    parts_all: list[str] = []
+    parts_dark: list[str] = []
     for blk in page.get_text("dict")["blocks"]:
         if blk.get("type") != 0:
             continue
@@ -674,14 +688,20 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
             for sp in ln["spans"]:
                 if legend_y_cut is not None and sp["bbox"][1] >= legend_y_cut:
                     continue
-                parts.append(sp["text"])
-    full_text = "|".join(parts)
+                parts_all.append(sp["text"])
+                if sp.get("color", 0) <= _DARK_THRESHOLD:
+                    parts_dark.append(sp["text"])
+
+    full_text = "|".join(parts_all)
+    dark_text = "|".join(parts_dark)
     doc.close()
 
     known_codes = {c["code"] for c in count_items}
     extras: list[dict] = []
 
     def _add(code: str, name: str, notes: str = "") -> None:
+        if (length_codes or set()) and code in (length_codes or set()):
+            return  # skip — already measured as a length item
         if code not in known_codes:
             known_codes.add(code)
             extras.append({
@@ -694,7 +714,7 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
             })
             print(f"  [auto-discover] {code}: {name}")
 
-    # ── Pass 1: hyphen-suffix variants of known codes ─────────────────────────
+    # ── Pass 1: hyphen-suffix variants of known codes (all text) ─────────────
     for item in list(count_items):
         base = re.escape(item["code"])
         for m in re.finditer(
@@ -705,16 +725,17 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict]) -> list[dict]:
             _add(variant, item.get("name", variant) + f" (variant of {item['code']})",
                  item.get("notes", ""))
 
-    # ── Pass 2: general code scan ─────────────────────────────────────────────
-    # Matches codes with 1–2 digit suffix (component codes).
-    # 3+ digits → room labels → skipped.
+    # ── Pass 2: general code scan (dark text only) ────────────────────────────
+    # Only scans dark-coloured spans so that room labels / annotations printed
+    # in light grey (colour > 0x404040) are not mistaken for components.
+    # Matches 1–4 uppercase letters + 1–2 digits (+ optional hyphen suffix).
     general_pat = re.compile(
         r"(?<![A-Za-z\u00C0-\u024F])"
         r"([A-ZÅÄÖ]{1,4}\d{1,2}(?:-[A-Z0-9]{1,3})?)"
         r"(?!\d)(?!-[A-Z0-9])"
     )
-    for m in general_pat.finditer(full_text):
-        _add(m.group(1), m.group(1))   # name = code until library clarifies
+    for m in general_pat.finditer(dark_text):
+        _add(m.group(1), m.group(1))
 
     return count_items + extras
 
@@ -786,7 +807,10 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     # Claude often identifies "N1" but not "N1-R" as a separate component.
     # Scan the PDF text for any "{known_code}-{suffix}" patterns and inject
     # them as extra count items so they get properly counted.
-    count_items = _inject_variant_codes(drawing_pdf_path, count_items)
+    # Pass length_codes so that auto-discovery doesn't re-add a code that Pass 1
+    # already correctly classified as a length item (e.g. KS, KR, FBK …).
+    length_codes = {c["code"] for c in length_items}
+    count_items = _inject_variant_codes(drawing_pdf_path, count_items, length_codes)
 
     # ── Counting passes ────────────────────────────────────────────────────────
     if count_items:
