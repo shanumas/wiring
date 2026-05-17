@@ -211,6 +211,41 @@ starting with "D". Å and A were then never extracted as separate codes.
 
 ---
 
+## L014 — NT phantom hallucination: vision passes agree on a code that doesn't exist (2026-05-17)
+
+**Drawing**: 1.pdf  
+**Failure**: NT=2 (high confidence, A=2 B=2 C=2). "NT" appears ZERO times anywhere in the PDF.  
+**Root cause**: Pass 1 hallucinated "NT" as a component code for "nödstopp" context it saw
+visually. Vision passes A/B/C then consistently found 2 instances (likely the NÖDSTOPP-connected
+switch symbols). All three agreeing on the same count gave false "high confidence."  
+**Why it's hard to detect**: When all vision passes hallucinate the same value, vote-based
+confidence cannot distinguish a correct unanimous count from a wrong unanimous hallucination.  
+**Fix in code**: After vision counting, apply a phantom-hallucination guard: if a vision item's
+code (≥ 2 chars) appears ZERO times anywhere in the full PDF text (all zones, word-boundary
+search), force count to 0 and confidence to "low". Single-letter codes are excluded because
+they appear constantly in Swedish prose and are always graphical-symbol codes from the legend.  
+**Result**: NT is zeroed and flagged "PHANTOM?" in the server log. Real codes (FH, UT, D1…)
+all pass because they appear at least once in the PDF text.
+
+---
+
+## L015 — Similar graphical variants (Å, A, RA) lumped together in vision count (2026-05-17)
+
+**Drawing**: 1.pdf (spring-return switches: Å = 1-pol, A = 1-pol med DALI, RA = kron med DALI)  
+**Failure**: A=3 counted (all three variants lumped), Å=0, RA missing entirely.  
+**Root cause**:
+1. Each `_count_one_symbol` call for "A" or "Å" had no context about sibling symbols, so
+   Claude counted ALL spring-return switches as whichever variant it was asked for first.
+2. "RA" in the legend has its "R" as a vector graphic (not PDF text) — only the "A" character
+   appears in PDF text. So three isolated "A" blocks appear in the legend scan; "RA" is never
+   auto-discovered. Pass 1 (with L013 fix) must correctly identify "RA".
+**Fix in code**: Added `exclude_codes` parameter to `_count_one_symbol` and
+`_count_one_symbol_legend`. When counting any vision item, all OTHER vision items are passed
+as exclusions. The prompt explicitly tells Claude: "count ONLY 'A' (1-pol med DALI) — do NOT
+count Å (1-pol) or RA (kron med DALI) here, they are counted in separate calls."
+
+---
+
 ## Template for new lessons
 
 ```

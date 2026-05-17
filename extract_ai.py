@@ -586,12 +586,28 @@ Do not write any explanation. Do not use markdown. Just output the raw JSON obje
     return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
 
 
-def _count_one_symbol(b64: str, code: str, name: str, hint: int | None = None) -> int:
+def _count_one_symbol(b64: str, code: str, name: str, hint: int | None = None,
+                       exclude_codes: list[dict] | None = None) -> int:
     """
     Count a single symbol in the floor plan, ignoring legend.
     hint: Pass 1 rough count — used as example value so Claude anchors near the right range.
+    exclude_codes: other vision items that look similar — Claude must NOT count these here.
     """
     example_val = hint if hint is not None else 0
+
+    excl_block = ""
+    if exclude_codes:
+        lines = "\n".join(
+            f'  "{c["code"]}": {c["name"]}  ← do NOT count this here'
+            for c in exclude_codes
+        )
+        excl_block = f"""
+IMPORTANT — similar symbols that must NOT be counted in this call:
+{lines}
+Count ONLY "{code}" ({name}). Even if the symbols look similar, only count the ones
+that match the exact variant above. Each variant will be counted separately in its own call.
+"""
+
     prompt = f"""You are counting electrical/building-services symbols installed in a building floor plan.
 
 CRITICAL — before you count anything:
@@ -603,7 +619,7 @@ CRITICAL — before you count anything:
 Count only this symbol, and only where it appears INSIDE rooms, corridors,
 or building spaces of the floor plan:
   "{code}": {name}
-
+{excl_block}
 Rules:
 - If a symbol is in the legend/förklaringar box → do NOT count it.
 - If a symbol is in the title block or revision table → do NOT count it.
@@ -630,11 +646,29 @@ def _count_full_image(b64: str, codes: list[dict], hints: dict[str, int] | None 
     Pass A/C — count each symbol individually using the legend-aware prompt.
     hints parameter kept for signature compatibility but no longer used.
     """
-    return {c["code"]: _count_one_symbol_legend(b64, c["code"], c["name"]) for c in codes}
+    return {
+        c["code"]: _count_one_symbol_legend(
+            b64, c["code"], c["name"],
+            exclude_codes=[x for x in codes if x["code"] != c["code"]],
+        )
+        for c in codes
+    }
 
 
-def _count_one_symbol_legend(b64: str, code: str, name: str) -> int:
+def _count_one_symbol_legend(b64: str, code: str, name: str,
+                              exclude_codes: list[dict] | None = None) -> int:
     """Pass B variant — same single-symbol approach but different framing."""
+    excl_block = ""
+    if exclude_codes:
+        lines = "\n".join(
+            f'  "{c["code"]}": {c["name"]}  ← do NOT count this here'
+            for c in exclude_codes
+        )
+        excl_block = f"""
+IMPORTANT — similar symbols that must NOT be counted in this call:
+{lines}
+Count ONLY "{code}" ({name}). Each variant is counted separately in its own call.
+"""
     prompt = f"""You are a quantity surveyor counting symbols in a building services floor plan.
 
 The drawing contains a "FÖRKLARINGAR", "LEGEND", or "BETECKNINGAR" box
@@ -643,7 +677,7 @@ Symbols inside that box are just examples — they must NOT be counted.
 
 Count how many "{code}" ({name}) symbols appear in the actual floor plan
 (rooms, corridors, shafts) — never in the legend, title block, or revision table.
-
+{excl_block}
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
 Format: {{"{code}": <your_count>}}"""
 
@@ -661,7 +695,13 @@ Format: {{"{code}": <your_count>}}"""
 
 def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
     """Pass B — individual calls with legend-aware framing."""
-    return {c["code"]: _count_one_symbol_legend(b64, c["code"], c["name"]) for c in codes}
+    return {
+        c["code"]: _count_one_symbol_legend(
+            b64, c["code"], c["name"],
+            exclude_codes=[x for x in codes if x["code"] != c["code"]],
+        )
+        for c in codes
+    }
 
 
 def _count_one_symbol_qwen(b64: str, code: str, name: str) -> int | None:
@@ -1084,6 +1124,21 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
     length_codes = {c["code"] for c in length_items}
     count_items = _inject_variant_codes(drawing_pdf_path, count_items, length_codes)
 
+    # ── Build full PDF text for phantom-hallucination guard ───────────────────
+    # All spans from all zones (no y-cut filtering) joined into one string.
+    # Used later to detect vision-counted items whose code appears NOWHERE in
+    # the PDF text — a strong signal of Pass-1 hallucination.
+    _ph_doc  = fitz.open(drawing_pdf_path)
+    _ph_page = _ph_doc[0]
+    _full_pdf_text = " ".join(
+        sp["text"]
+        for blk in _ph_page.get_text("dict")["blocks"]
+        if blk.get("type") == 0
+        for ln in blk["lines"]
+        for sp in ln["spans"]
+    )
+    _ph_doc.close()
+
     # ── Counting passes ────────────────────────────────────────────────────────
     if count_items:
         pdf_stem = Path(drawing_pdf_path).stem
@@ -1151,9 +1206,12 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
                   f"{[c['code'] for c in vision_items]}")
             for c in vision_items:
                 code_v, name_v = c["code"], c["name"]
-                va = _count_one_symbol(full_b64, code_v, name_v)
-                vb = _count_one_symbol(full_b64, code_v, name_v)
-                vc = _count_one_symbol(full_b64, code_v, name_v)
+                # Build sibling exclusion list: all other vision items
+                # so Claude counts each variant exclusively.
+                excl = [x for x in vision_items if x["code"] != code_v]
+                va = _count_one_symbol(full_b64, code_v, name_v, exclude_codes=excl)
+                vb = _count_one_symbol(full_b64, code_v, name_v, exclude_codes=excl)
+                vc = _count_one_symbol(full_b64, code_v, name_v, exclude_codes=excl)
                 vd = _count_one_symbol_qwen(full_b64, code_v, name_v)
                 vision_a[code_v] = va
                 vision_b[code_v] = vb
@@ -1215,6 +1273,22 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
                     confidence = "low"
 
                 final = best_val
+
+                # ── Phantom-hallucination guard ──────────────────────────────
+                # If all vision passes returned a non-zero count but the code
+                # string appears NOWHERE in the full PDF text (body + legend +
+                # title block), the component is very likely a hallucination.
+                # Single-letter codes (A, B, Å …) are excluded from this check
+                # because they appear constantly in Swedish prose.
+                # Only applied to codes ≥ 2 chars with a non-zero final count.
+                if final > 0 and len(code) >= 2:
+                    # Word-boundary search: code must appear as a standalone
+                    # token (not buried inside a longer word).
+                    _pat = r'(?<![A-Za-z\u00C0-\u024F])' + re.escape(code) + r'(?![A-Za-z\u00C0-\u024F\d])'
+                    if not re.search(_pat, _full_pdf_text):
+                        print(f"  ⚠ PHANTOM? {code}: vision={final} but code appears 0 times in PDF text → confidence forced to low")
+                        confidence = "low"
+                        final = 0   # zero out — no text evidence this component exists
 
                 item["count_method"]  = "vision"
                 item["count_text"]    = None
