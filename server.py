@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 import fitz
-from extract import extract
+from extract import extract, _to_display_bbox
 from extract_vector import extract_vectors
 from estimate import estimate, COST_TABLE, COST_FALLBACK_PER_M
 from extract_ai import build_component_library, load_component_library, extract_with_ai, load_ai_cache, _ai_cache_path
@@ -296,6 +296,50 @@ def drawing_estimate_ai(name: str):
     if data is None:
         raise HTTPException(503, "AI estimate not available (check ANTHROPIC_API_KEY)")
     return JSONResponse(data, headers=NO_CACHE)
+
+@app.get("/drawing/{name}/search")
+def search_drawing(name: str, q: str = ""):
+    """
+    Return bounding boxes of every occurrence of text `q` in the drawing PDF.
+    Coordinates are in PDF-point space (same as page_width / page_height).
+    Search is case-insensitive: 'w1', 'W1', and 'W1' all find the same spans.
+    """
+    if name not in _cache:
+        raise HTTPException(404, f"Drawing '{name}' not found")
+    if not q or not q.strip():
+        return JSONResponse({"query": q, "matches": [], "count": 0})
+
+    pdf_path = PDF_DIR / name
+    doc  = fitz.open(str(pdf_path))
+    page = doc[0]
+
+    # page.search_for() returns coordinates in the raw, unrotated MediaBox space —
+    # the same space as page.get_text("dict") blocks.  This does NOT account for
+    # the page's /Rotate metadata, so on rotated PDFs the raw y-axis can exceed
+    # page.rect.height (e.g. y=2057 on a page whose rect.height=1684 with rot=270).
+    #
+    # _to_display_bbox() applies the same rotation transform used by extract.py for
+    # component overlay bboxes, converting raw → display coordinate space so that
+    # search highlights land on top of the correct text in the rendered PNG.
+    seen: set[tuple] = set()
+    matches: list[dict] = []
+    for term in dict.fromkeys([q, q.upper(), q.lower()]):   # preserve first-seen order
+        for r in page.search_for(term):
+            dx0, dy0, dx1, dy1 = _to_display_bbox(
+                (r.x0, r.y0, r.x1, r.y1), page
+            )
+            key = (round(dx0), round(dy0), round(dx1), round(dy1))
+            if key not in seen:
+                seen.add(key)
+                matches.append({"x0": dx0, "y0": dy0, "x1": dx1, "y1": dy1})
+    doc.close()
+
+    return JSONResponse({
+        "query":   q,
+        "matches": matches,
+        "count":   len(matches),
+    })
+
 
 @app.get("/library")
 def get_library():

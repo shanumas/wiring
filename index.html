@@ -354,6 +354,73 @@
       color: #999999;
       border-top: 1px solid #eeeeee;
     }
+    /* ── search bar ── */
+    #search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: #1a2640;
+      border-bottom: 1px solid #2e4470;
+      flex-shrink: 0;
+    }
+    #search-input {
+      width: 220px;
+      padding: 5px 10px;
+      border: 1px solid #3a5490;
+      border-radius: 4px;
+      font-size: 13px;
+      background: #243256;
+      color: #e8ecf4;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #search-input::placeholder { color: #6a7a9a; }
+    #search-input:focus { border-color: #6090e0; }
+    #search-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #2e4470;
+      color: #c8d4ec;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #search-btn:hover { background: #3a5490; }
+    #search-count {
+      font-size: 12px;
+      color: #c8d4ec;
+      min-width: 90px;
+    }
+    #search-clear {
+      background: none;
+      border: none;
+      color: #6a7a9a;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 0 2px;
+      display: none;
+    }
+    #search-clear:hover { color: #e8ecf4; }
+
+    /* ── search highlights (yellow boxes over PDF image) ── */
+    .search-highlight {
+      position: absolute;
+      background: rgba(255, 210, 0, 0.35);
+      border: 2px solid rgba(200, 150, 0, 0.85);
+      border-radius: 2px;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(255, 200, 0, 0.4);
+    }
+    .search-highlight.first {
+      background: rgba(255, 160, 0, 0.45);
+      border-color: rgba(210, 100, 0, 0.95);
+      box-shadow: 0 0 0 2px rgba(255, 160, 0, 0.5);
+    }
+
     /* ── zoom controls ── */
     .zoom-controls {
       display: flex;
@@ -566,6 +633,13 @@
   </div>
 </header>
 
+<div id="search-bar">
+  <input id="search-input" type="text" placeholder="Search code… e.g. W1, P11" autocomplete="off" spellcheck="false">
+  <button id="search-btn">Find</button>
+  <span id="search-count"></span>
+  <button id="search-clear" title="Clear search">✕</button>
+</div>
+
 <main>
   <div id="drawing-pane">
     <div id="image-wrap">
@@ -676,6 +750,11 @@
     displayRotation = 0;
     document.getElementById('image-wrap').style.transform = '';
     document.getElementById('image-wrap').style.margin    = '';
+    // Clear search highlights when switching drawings
+    _searchMatches = [];
+    document.getElementById('search-input').value = '';
+    document.getElementById('search-count').textContent = '';
+    document.getElementById('search-clear').style.display = 'none';
     buildOverlays();
     rebuildSidebar();
     rebuildEstimate(estData);
@@ -886,13 +965,99 @@
 
   const isTouchDevice = () => window.matchMedia('(pointer: coarse)').matches;
 
+  // ── search & highlight ────────────────────────────────────────────────────
+  let _searchMatches = [];   // current result set (PDF-coord rects)
+  let _searchDebounce = null;
+
+  function renderSearchHighlights() {
+    const wrap = document.getElementById('image-wrap');
+    const img  = document.getElementById('drawing-img');
+    wrap.querySelectorAll('.search-highlight').forEach(e => e.remove());
+    if (!_searchMatches.length || !pageW) return;
+
+    const scaleX = img.clientWidth  / pageW;
+    const scaleY = img.clientHeight / pageH;
+
+    _searchMatches.forEach((r, i) => {
+      const div = document.createElement('div');
+      div.className = 'search-highlight' + (i === 0 ? ' first' : '');
+      div.style.left   = `${r.x0 * scaleX}px`;
+      div.style.top    = `${r.y0 * scaleY}px`;
+      div.style.width  = `${(r.x1 - r.x0) * scaleX}px`;
+      div.style.height = `${(r.y1 - r.y0) * scaleY}px`;
+      wrap.appendChild(div);
+    });
+  }
+
+  async function runSearch(query) {
+    const countEl = document.getElementById('search-count');
+    const clearBtn = document.getElementById('search-clear');
+
+    // Clear old highlights
+    _searchMatches = [];
+    renderSearchHighlights();
+    clearBtn.style.display = query ? 'block' : 'none';
+
+    if (!query || !currentDrawing) {
+      countEl.textContent = '';
+      return;
+    }
+
+    countEl.textContent = 'Searching…';
+    try {
+      const resp = await fetch(
+        `/drawing/${encodeURIComponent(currentDrawing)}/search?q=${encodeURIComponent(query)}`
+      );
+      if (!resp.ok) { countEl.textContent = 'Error'; return; }
+      const data = await resp.json();
+      _searchMatches = data.matches;
+      countEl.textContent = data.count === 0
+        ? 'No matches'
+        : `${data.count} match${data.count === 1 ? '' : 'es'}`;
+      renderSearchHighlights();
+
+      // Scroll first match into view
+      const first = document.querySelector('.search-highlight.first');
+      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      countEl.textContent = 'Error';
+    }
+  }
+
+  document.getElementById('search-input').addEventListener('input', e => {
+    clearTimeout(_searchDebounce);
+    _searchDebounce = setTimeout(() => runSearch(e.target.value.trim()), 350);
+  });
+
+  document.getElementById('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      clearTimeout(_searchDebounce);
+      runSearch(e.target.value.trim());
+    } else if (e.key === 'Escape') {
+      e.target.value = '';
+      runSearch('');
+    }
+  });
+
+  document.getElementById('search-btn').addEventListener('click', () => {
+    clearTimeout(_searchDebounce);
+    runSearch(document.getElementById('search-input').value.trim());
+  });
+
+  document.getElementById('search-clear').addEventListener('click', () => {
+    document.getElementById('search-input').value = '';
+    runSearch('');
+  });
+
   // ── build overlays ────────────────────────────────────────────────────────
   function buildOverlays() {
     const wrap = document.getElementById('image-wrap');
     const img  = document.getElementById('drawing-img');
 
-    // Remove old overlays
+    // Remove old component overlays (search highlights handled separately)
     wrap.querySelectorAll('.comp-overlay').forEach(e => e.remove());
+    // Re-render search highlights to stay above component overlays
+    renderSearchHighlights();
 
     const scaleX = img.clientWidth  / pageW;
     const scaleY = img.clientHeight / pageH;
@@ -1080,6 +1245,11 @@
         list.querySelectorAll('.comp-row').forEach(r => r.classList.remove('active'));
         row.classList.add('active');
         selectVariant(s);
+        // Also populate the search box and highlight all instances in the drawing
+        const inp = document.getElementById('search-input');
+        inp.value = s.system;
+        clearTimeout(_searchDebounce);
+        runSearch(s.system);
       });
       list.appendChild(row);
     });
