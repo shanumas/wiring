@@ -996,24 +996,49 @@
       const hStr     = hParts.length ? hParts.join(' · ') + ' mm ÖFG' : '';
       const details  = [sizeStr, vertStr, hStr, fireStr].filter(Boolean).join(' &nbsp;·&nbsp; ');
 
-      // Validator breakdown for AI count items (A/B/C = Claude, D = Qwen)
+      // Validator breakdown for AI count items.
+      // Two different confidence models depending on count_method:
+      //
+      //  "text"   — authoritative PDF text extraction cross-checked by one vision pass.
+      //             count_text = exact text count (final answer).
+      //             count_vision = independent visual sanity-check.
+      //             Confidence = how much they agree. A/B/C/D are NOT shown because
+      //             they would all be the same number — that is misleading.
+      //
+      //  "vision" — majority vote of 3 Claude passes (A/B/C) + optional Qwen (D).
+      //             Confidence = vote agreement.
       let validatorHtml = '';
-      if (extractionMode === 'ai' && s.count_grid_a != null) {
-        const conf = s.count_confidence || 'unknown';
-        const isHigh   = conf === 'high';
-        const isMedium = conf === 'medium';
-        const isLow    = conf === 'low';
-        const icon       = isHigh ? '✓' : isMedium ? '⚠' : '✗';
-        const confColor  = isHigh ? '#2a7a3a' : isMedium ? '#8a6200' : '#9c2c2c';
-        const manualNote = isLow
-          ? `<span style="font-weight:600"> — needs manual check</span>` : '';
-        // Pass D (Qwen) shown only when present; greyed out when absent
-        const dPart = s.count_grid_d != null
-          ? ` <span title="Qwen validator" style="color:#5a3a7a">D:${s.count_grid_d}</span>`
-          : ` <span title="Qwen not configured" style="color:#aaaaaa">D:—</span>`;
-        validatorHtml = `<div class="comp-validators" style="color:${confColor}">
-          ${icon} A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}${dPart}${manualNote}
-        </div>`;
+      if (extractionMode === 'ai' && s.count_method) {
+        const conf      = s.count_confidence || 'unknown';
+        const isHigh    = conf === 'high';
+        const isMedium  = conf === 'medium';
+        const isLow     = conf === 'low';
+        const icon      = isHigh ? '✓' : isMedium ? '⚠' : '✗';
+        const confColor = isHigh ? '#2a7a3a' : isMedium ? '#8a6200' : '#9c2c2c';
+
+        if (s.count_method === 'text') {
+          // Text + vision sanity-check display
+          const visionStr = s.count_vision != null
+            ? ` <span title="Independent vision sanity-check" style="color:#555">vision:${s.count_vision}</span>`
+            : '';
+          const mismatch = isLow
+            ? ` <span style="font-weight:600"> — text/vision mismatch, check manually</span>` : '';
+          const medNote = isMedium
+            ? ` <span style="color:#8a6200"> — minor discrepancy</span>` : '';
+          validatorHtml = `<div class="comp-validators" style="color:${confColor}">
+            ${icon} <span title="Exact PDF text count">T:${s.count_text}</span>${visionStr}${medNote}${mismatch}
+          </div>`;
+        } else {
+          // Vision majority-vote display (A/B/C = Claude passes, D = Qwen)
+          const manualNote = isLow
+            ? `<span style="font-weight:600"> — needs manual check</span>` : '';
+          const dPart = s.count_grid_d != null
+            ? ` <span title="Qwen validator" style="color:#5a3a7a">D:${s.count_grid_d}</span>`
+            : ` <span title="Qwen not configured" style="color:#aaaaaa">D:—</span>`;
+          validatorHtml = `<div class="comp-validators" style="color:${confColor}">
+            ${icon} A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}${dPart}${manualNote}
+          </div>`;
+        }
       }
 
       const isLengthItem = (extractionMode === 'vector' || extractionMode === 'ai') && s.total_length_m != null;

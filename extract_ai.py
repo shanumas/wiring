@@ -1030,16 +1030,39 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
         text_items  = [c for c in count_items if _is_text_countable(c["code"])]
         vision_items = [c for c in count_items if not _is_text_countable(c["code"])]
 
-        # Text extraction — exact, zero tokens
+        # ── TEXT items: exact PDF text extraction + one vision sanity check ──────
+        # Text extraction is deterministic and exact (zero tokens), so we use it
+        # as the authoritative count for codes that are safe to count from text.
+        #
+        # We also run ONE independent vision pass per text item as a sanity check.
+        # If the vision result differs from the text count by more than 10% the
+        # confidence is flagged — this surfaces bugs like the title-block y-cut
+        # regression where text returns a wrong number with false "high confidence".
+        #
+        # Text items store:  count_method="text", count_text=N, count_vision=M
+        # Vision items store: count_method="vision", count_grid_a/b/c/d
+
         if text_items:
             text_counts = _count_from_pdf_text(drawing_pdf_path, text_items, legend_bbox)
             print(f"  Text counts (exact): { {c['code']: text_counts.get(c['code'], 0) for c in text_items} }")
         else:
             text_counts = {}
 
-        # Vision counting — 3 Claude passes + 1 Qwen pass for cross-model validation.
-        # Pass D uses Qwen VL via OpenRouter; it is skipped if OPENROUTER_API_KEY
-        # is not set (value stored as None in the grid).
+        # One vision sanity-check pass for each text item
+        vision_check: dict[str, int] = {}
+        if text_items:
+            print(f"  Vision sanity-check for {len(text_items)} text item(s):")
+            for c in text_items:
+                code_t, name_t = c["code"], c["name"]
+                vc = _count_one_symbol(full_b64, code_t, name_t)
+                vision_check[code_t] = vc
+                tc = text_counts.get(code_t, 0)
+                delta = abs(tc - vc)
+                ratio = delta / tc if tc > 0 else (1.0 if vc > 0 else 0.0)
+                flag = " ⚠ MISMATCH" if ratio > 0.10 else ""
+                print(f"    {code_t}: text={tc}  vision={vc}{flag}")
+
+        # ── VISION items: 3 Claude passes + 1 Qwen pass ───────────────────────
         qwen_available = _client_qwen() is not None
         if qwen_available:
             print(f"  Qwen pass D enabled (model: {QWEN_MODEL})")
@@ -1066,57 +1089,72 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
                 d_str = str(vd) if vd is not None else "—"
                 print(f"    {code_v}: A={va} B={vb} C={vc} D={d_str}")
 
-        # Merge into four grids (text items are identical across all passes)
-        grid_a = {**text_counts, **vision_a}
-        grid_b = {**text_counts, **vision_b}
-        grid_c = {**text_counts, **vision_c}
-        # For text items, pass D equals text count (exact); for vision, use Qwen result
-        grid_d: dict[str, int | None] = {}
-        for code_t in text_counts:
-            grid_d[code_t] = text_counts[code_t]   # text is deterministic; D = same
-        for code_v, vd in vision_d.items():
-            grid_d[code_v] = vd
-
-        header = f"  {'Code':<12} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  method"
-        print(f"\n{header}")
+        # ── Final count + confidence per item ─────────────────────────────────
+        print(f"\n  {'Code':<12} {'result':>8}  confidence  method")
         for item in count_items:
-            code = item["code"]
+            code    = item["code"]
             is_text = _is_text_countable(code)
 
-            a = grid_a.get(code, 0)
-            b = grid_b.get(code, 0)
-            c = grid_c.get(code, 0)
-            d = grid_d.get(code)          # None when Qwen unavailable
+            if is_text:
+                # Authoritative = text count; vision is a sanity check only
+                tc    = text_counts.get(code, 0)
+                vc    = vision_check.get(code, tc)
+                delta = abs(tc - vc)
+                ratio = delta / tc if tc > 0 else (1.0 if vc > 0 else 0.0)
 
-            # Majority vote across available validators
-            # With D present: 4 votes, need ≥3 agreement for "high"
-            # Without D (None): fall back to 3-vote logic
-            votes = [a, b, c] + ([d] if d is not None else [])
-            counts_freq: dict[int, int] = {}
-            for v in votes:
-                counts_freq[v] = counts_freq.get(v, 0) + 1
-            best_val  = max(counts_freq, key=lambda v: (counts_freq[v], -v))
-            best_count = counts_freq[best_val]
-            n_votes   = len(votes)
+                if ratio <= 0.10:
+                    confidence = "high"
+                elif ratio <= 0.25:
+                    confidence = "medium"
+                else:
+                    confidence = "low"
 
-            if best_count == n_votes:
-                confidence = "high"
-            elif best_count >= n_votes - 1:
-                confidence = "medium"
+                final = tc          # text count is authoritative
+
+                item["count_method"]  = "text"
+                item["count_text"]    = tc
+                item["count_vision"]  = vc
+                # Keep grid slots null — they are NOT independent validators for text items
+                item["count_grid_a"]  = None
+                item["count_grid_b"]  = None
+                item["count_grid_c"]  = None
+                item["count_grid_d"]  = None
+
             else:
-                confidence = "low"
-            final = best_val
+                # Vision items: majority vote across A/B/C (+ D if available)
+                a = vision_a.get(code, 0)
+                b = vision_b.get(code, 0)
+                c = vision_c.get(code, 0)
+                d = vision_d.get(code)
+                votes = [a, b, c] + ([d] if d is not None else [])
+                freq: dict[int, int] = {}
+                for v in votes:
+                    freq[v] = freq.get(v, 0) + 1
+                best_val   = max(freq, key=lambda v: (freq[v], -v))
+                best_count = freq[best_val]
+                n_votes    = len(votes)
 
-            item["count_grid_a"]     = a
-            item["count_grid_b"]     = b
-            item["count_grid_c"]     = c
-            item["count_grid_d"]     = d          # None when Qwen unavailable
+                if best_count == n_votes:
+                    confidence = "high"
+                elif best_count >= n_votes - 1:
+                    confidence = "medium"
+                else:
+                    confidence = "low"
+
+                final = best_val
+
+                item["count_method"]  = "vision"
+                item["count_text"]    = None
+                item["count_vision"]  = None
+                item["count_grid_a"]  = a
+                item["count_grid_b"]  = b
+                item["count_grid_c"]  = c
+                item["count_grid_d"]  = d
+
             item["count_confidence"] = confidence
             item["quantity"]         = final
-            method = "text" if is_text else "vision"
-            icon   = {"high": "✓", "medium": "⚠", "low": "✗"}[confidence]
-            d_str  = f"{d:>4}" if d is not None else "   —"
-            print(f"  {code:<12} {a:>4} {b:>4} {c:>4} {d_str}  {final} {icon}  [{method}]")
+            icon = {"high": "✓", "medium": "⚠", "low": "✗"}[confidence]
+            print(f"  {code:<12} {final:>8}  {confidence:<10}  {item['count_method']}  {icon}")
 
     # Reassemble components list
     raw["components"] = count_items + length_items
@@ -1198,13 +1236,36 @@ def _normalise(raw: dict, page_w: float, page_h: float) -> dict:
             s["total_length_m"] = qty
         else:
             s["count"] = max(0, int(round(qty)))
-            # Propagate per-grid validator counts so the UI can display them
-            if "count_grid_a" in item:
-                s["count_grid_a"]     = item["count_grid_a"]
-                s["count_grid_b"]     = item["count_grid_b"]
-                s["count_grid_c"]     = item["count_grid_c"]
-                s["count_grid_d"]     = item.get("count_grid_d")  # None if Qwen absent
-                s["count_confidence"] = item.get("count_confidence", "unknown")
+            # Propagate validation metadata so the UI can display it correctly.
+            # count_method distinguishes two very different confidence models:
+            #
+            #   "text"   — authoritative PDF text extraction + one vision sanity check.
+            #              count_text   = exact text count (final answer)
+            #              count_vision = independent vision cross-check
+            #              confidence   = based on text/vision agreement
+            #              count_grid_a/b/c/d are NOT independent validators → stored as null.
+            #
+            #   "vision" — majority vote of 3 Claude passes + optional Qwen pass D.
+            #              count_grid_a/b/c/d = independent visual counts
+            #              confidence   = based on vote agreement
+            #              count_text/count_vision are null.
+            method = item.get("count_method", "unknown")
+            s["count_method"]    = method
+            s["count_confidence"] = item.get("count_confidence", "unknown")
+            if method == "text":
+                s["count_text"]   = item.get("count_text")
+                s["count_vision"] = item.get("count_vision")
+                s["count_grid_a"] = None
+                s["count_grid_b"] = None
+                s["count_grid_c"] = None
+                s["count_grid_d"] = None
+            else:
+                s["count_text"]   = None
+                s["count_vision"] = None
+                s["count_grid_a"] = item.get("count_grid_a")
+                s["count_grid_b"] = item.get("count_grid_b")
+                s["count_grid_c"] = item.get("count_grid_c")
+                s["count_grid_d"] = item.get("count_grid_d")
         summary.append(s)
 
     return {
