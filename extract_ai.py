@@ -464,17 +464,37 @@ Instructions:
    drawing (e.g. "V18" is not "V11", "D2" is not "D7"). Read each digit carefully.
    Use the legend / förklaringar box only to understand what each code means —
    do NOT count symbols shown inside the legend box itself.
+   IMPORTANT — reading legend rows: In the FÖRKLARINGAR legend, each row has a
+   short code label at the left, followed by a graphical symbol, then the
+   description text. The description belongs ONLY to that row's code — never
+   carry a description across rows. In particular:
+   • A "D" appearing inside a description word (e.g. "DALI", "MED DALI") is NOT
+     a component code — it is part of the description text. Do NOT confuse it
+     with a D-code (D1, D2…) from a different legend row.
+   • Codes that are a single letter or Å/Ä/Ö character (e.g. "Å", "A", "RA")
+     are valid component codes when they appear as the leftmost label in a legend
+     row, next to a graphical symbol. Read them as separate codes with their own
+     descriptions — never merge them into an adjacent numbered code (D1, D2…).
    IMPORTANT: Only use codes that actually appear in the component library above
    or that you can clearly read from the drawing labels. Do not invent codes.
    Component codes may be a single digit (e.g. "4" for a 4-gang wall outlet,
    "2" for a 2-gang outlet). If you see a bare digit repeated many times at
    outlet/socket positions in the floor plan, it IS a component code — include it.
+   Component codes may also be a single letter or short letter combination
+   (e.g. "A" for a spring-return dimmer, "R", "T" for timer variants).
+   If the FÖRKLARINGAR legend defines a graphical symbol with a short code label,
+   look for that same graphical symbol in the drawing body and count it — even if
+   the code is a single letter.
    Do NOT include as codes:
    • Cable specification labels (e.g. "FRHF 3G1,5", "5G2,5", "3×2,5") — these
      describe the cable type on a route, not an installed component.
    • Mounting height annotations ending in ÖFG or ÖFK (e.g. "1000ÖFG", "1900ÖFG").
    • Multi-word annotation phrases (e.g. "VIA NÖDSTOPP", "MED STANDARDCYLINDER").
-   • Architectural drawing grid references printed in the margins (A, B, C, 1, 2 …).
+   • Architectural drawing grid references — these appear ONLY as column/row labels
+     in the outermost border/margin of the sheet (far outside the floor plan area).
+     Do NOT apply this exclusion to codes inside the drawing body or legend: a
+     single letter such as "A", "R", or "T" next to a graphical component symbol
+     IS a valid component code, not a grid reference.
    • Swedish description words inside a legend entry text, such as "1-VÄGS",
      "2-VÄGS", "3-POL", "1-fas" — these describe the component type (1-way,
      2-way, 3-pole) and are NOT codes. The code is the label BEFORE the dash-word,
@@ -845,7 +865,7 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
 
     full_text = "|".join(parts_all)
     dark_text = "|".join(parts_dark)
-    doc.close()
+    # doc stays open — Pass 4 still needs page.get_text() for legend scanning
 
     known_codes = {c["code"] for c in count_items}
     extras: list[dict] = []
@@ -888,33 +908,86 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
     for m in general_pat.finditer(dark_text):
         _add(m.group(1), m.group(1))
 
-    # ── Pass 3: pure-digit codes (e.g. "4" = 4-vägguttag) ────────────────────
-    # Some Swedish electrical drawings use a bare digit as the component code
-    # (e.g. "4" for a 4-gang wall outlet). These are never caught by Pass 2
-    # because the pattern requires at least one letter.
-    # Strategy: count occurrences of each 1–2-digit token in dark_text.
-    # Only inject tokens that appear ≥ 3 times — this filters out one-off
-    # circuit/breaker numbers while catching repeatedly-placed outlet labels.
+    # ── Pass 3 + 4 (merged): short codes from the legend section ────────────
+    # Pure-digit codes (e.g. "4" = 4-vägguttag) and pure-letter codes (e.g.
+    # "A" = återfjädrande dimmer) both share the same problem: they are too
+    # short / generic to discover reliably from the drawing-body text.
     #
-    # IMPORTANT lookahead: also block digits that are immediately followed by a
-    # hyphen + letter, e.g. "1-VÄGS", "2-VÄGS", "1-POL", "1-fas".
-    # These are Swedish description words in legend text (1-way outlet, 1-pole),
-    # NOT component codes.  Without this guard, "1" would be injected as a
-    # phantom code because it appears frequently in legend descriptions like
-    # "DM 1-VÄGS UTTAG DISKMASKIN".
-    digit_pat = re.compile(
-        r"(?<!\d)"           # not preceded by a digit
-        r"(\d{1,2})"
-        r"(?!\d)"            # not followed by a digit
-        r"(?!-[A-Za-z\u00C0-\u024F])"  # not followed by hyphen+letter (1-VÄGS etc.)
-    )
-    digit_freq: dict[str, int] = {}
-    for m in digit_pat.finditer(dark_text):
-        digit_freq[m.group(1)] = digit_freq.get(m.group(1), 0) + 1
-    for digit, freq in digit_freq.items():
-        if freq >= 3:
-            _add(digit, digit)
+    # Frequency counting in the drawing body (the old Pass 3 approach) was
+    # too noisy — digits like "1", "2", "11" appeared 60+ times as circuit
+    # numbers and were wrongly injected as component codes.
+    #
+    # The correct source is the FÖRKLARINGAR (legend) section itself:
+    # each row has a small, isolated code-label cell (width < 80 pt,
+    # height < 40 pt, exactly one token) to the left of the graphical symbol.
+    # Scanning ONLY that area gives us real codes with no false positives from
+    # circuit/breaker annotations in the drawing body.
+    #
+    # Discovered codes go to vision counting (A/B/C/D) — they are not
+    # text-safe because single-letter / single-digit tokens would cause too
+    # many false regex matches in the drawing body text.
+    if legend_y_cut is not None:
+        _DARK_THR = 0x404040
+        # Tokens that look like codes but are always legend annotations
+        _LEG_SKIP = frozenset([
+            'EI', 'IP', 'UK', 'OK', 'SE', 'EJ', 'MED', 'OCH', 'FÖR', 'AV',
+            'VIA', 'HUS', 'DEL', 'BLÅ', 'TYP', 'MM', 'ST', 'ÖFG', 'ÖFK',
+        ])
+        # Accept: 1–3 uppercase letters, OR 1–2 digits (not pure "0")
+        _SHORT_CODE = re.compile(r'^([A-ZÅÄÖ]{1,3}|\d{1,2})$')
+        for blk in page.get_text("dict")["blocks"]:
+            if blk.get("type") != 0:
+                continue
+            bb = blk["bbox"]
+            if bb[1] < legend_y_cut:          # must be inside the legend area
+                continue
+            if bb[2] - bb[0] > 80:            # narrow block only (code cell)
+                continue
 
+            # Collect all dark tokens in this block
+            tokens = []
+            for ln in blk["lines"]:
+                for sp in ln["spans"]:
+                    if sp.get("color", 0) <= _DARK_THR:
+                        tokens.extend(sp["text"].strip().split())
+
+            if not tokens:
+                continue
+
+            # Case A: small isolated block (height < 40pt) — exactly one token
+            if bb[3] - bb[1] <= 40:
+                if len(tokens) == 1:
+                    tok = tokens[0].strip(".,;:()")
+                    if _SHORT_CODE.match(tok) and tok not in _LEG_SKIP and tok != "0":
+                        _add(tok, tok)
+            # Case B: very narrow block (width < 30pt) with description text —
+            # the code cell column in the FÖRKLARINGAR table sometimes wraps the
+            # full "CODE description…" into one narrow block (e.g. width=11 pt).
+            # Only trust the FIRST token; the rest are the component description.
+            elif bb[2] - bb[0] < 30:
+                raw_first = tokens[0]
+                tok = raw_first.strip(".,;:()")
+                # Guard: must be a short code, not a description word like "2-VÄGS"
+                # or a fraction like "3N/16A".
+                # • Trailing period in the raw token → abbreviation in a sentence
+                #   (e.g. "KV." = "kvarter", a Swedish building-address prefix),
+                #   not a component code.
+                # • Second token is a Swedish connective (EJ, SE, MED …) → the
+                #   block is narrative text ("DÄR EJ ANNAT", "HL SE HÄNVISNING"),
+                #   not a code-label row.  Only the immediately following word is
+                #   checked; words further in the description (FÖR, MED, SE …)
+                #   are part of valid component names and must not trigger rejection.
+                second = tokens[1].strip(".,;:()") if len(tokens) > 1 else ""
+                has_connective = second in _LEG_SKIP
+                if (_SHORT_CODE.match(tok)
+                        and tok not in _LEG_SKIP
+                        and tok != "0"
+                        and "/" not in tok
+                        and not raw_first.endswith(".")
+                        and not has_connective):
+                    _add(tok, tok)
+
+    doc.close()
     return count_items + extras
 
 
@@ -924,7 +997,7 @@ def _is_text_countable(code: str) -> bool:
 
     A code is text-safe when it meets one of:
     • Pure digit(s), 1–2 chars: "4", "12" — component code like 4-vägguttag.
-      The (?<!\d) / (?!\d) boundary guards in the regex prevent "4" from
+      The digit-boundary guards in the regex prevent "4" from
       matching inside "400", "2700" etc.
     • At least 2 chars long AND contains at least one digit: "P11", "D1", "V17".
 

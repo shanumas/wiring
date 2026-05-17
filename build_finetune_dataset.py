@@ -70,6 +70,11 @@ Instructions:
    drawing (e.g. "V18" is not "V11", "D2" is not "D7"). Read each digit carefully.
    Use the legend / förklaringar box only to understand what each code means —
    do NOT count symbols shown inside the legend box itself.
+   IMPORTANT — reading legend rows: each row's description belongs ONLY to that
+   row's code. A "D" inside a description word (e.g. "DALI", "MED DALI") is NOT
+   a component code — it is part of the description text. Codes that are a single
+   letter or Å/Ä/Ö (e.g. "Å", "A", "RA") are valid component codes in their own
+   rows — never merge their description into an adjacent numbered code (D1, D2…).
    IMPORTANT: Only use codes that actually appear in the drawing labels.
    Do NOT treat Swedish description words as codes: "1-VÄGS", "2-VÄGS", "3-POL",
    "1-fas" inside a legend entry describe the component type (1-way, 2-way, 3-pole)

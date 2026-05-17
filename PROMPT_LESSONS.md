@@ -165,6 +165,52 @@ approach fixes both the overcounting in 3.pdf and the regression in 1.pdf.
 
 ---
 
+## L011 — Single-letter component codes suppressed by grid-reference rule (2026-05-17)
+
+**Drawing**: 1.pdf (lighting plan with återfjädrande dimmers/switches)  
+**Failure**: Components with codes "A", "B", "T" etc. not counted. These are graphical symbols (spring-return dimmers, timers) with a single-letter code label in the legend. Count = 0 for all of them.  
+**Root cause**: Two failure points:
+1. Prompt rule "do not include architectural grid references (A, B, C…)" caused Claude to skip single-letter component codes — the rule did not distinguish between border grid labels and interior legend codes.
+2. `_inject_variant_codes` Pass 2 only discovers `[letter]+[digit]` patterns, so pure-letter codes like "A", "T" are never auto-discovered from drawing body text.  
+**Fix added to prompt**: Clarified that grid references appear ONLY in the outermost sheet border/margin, not inside the drawing body or legend. Single-letter codes next to graphical symbols in the legend ARE valid component codes.  
+**Fix in code**: Added Pass 4 in `_inject_variant_codes`: scans the FÖRKLARINGAR section specifically for small isolated blocks (width < 80 pt, height < 40 pt) containing exactly one 1–3 letter dark token. These are the code-label cells in the legend table. Discovered codes go to vision counting (A/B/C/D) since they are never countable from text.
+
+---
+
+## L012 — Pure-digit legend codes in tall narrow blocks not discovered (2026-05-17)
+
+**Drawing**: 3.pdf (4-vägguttag outlet)  
+**Failure**: Code "4" (4-way outlet) never injected — legend scan found zero matches.  
+**Root cause**: The FÖRKLARINGAR entry "4 4-VÄGSUTTAG, 300 ÖFG" is stored as one block
+with width=11 pt (narrow) but height=129 pt (tall), because PyMuPDF keeps the code label
+and its description in the same block when they wrap together. The height < 40 pt guard
+blocked it.  
+**Fix in code**: Split the legend scan into two cases:
+- **Case A** (unchanged): block height ≤ 40 pt → exactly one token required.
+- **Case B** (new): block width < 30 pt AND height > 40 pt → only the FIRST token is
+  checked. This reliably picks up "4" from "4 4-VÄGSUTTAG, 300 ÖFG" while rejecting
+  "2-VÄGSUTTAG" (first token fails `_SHORT_CODE` regex) and "3N/16A …" (contains "/").
+
+---
+
+## L013 — Legend row attribution: D1 gets Å/A's description, Å/A disappear (2026-05-17)
+
+**Drawing**: 1.pdf (lighting plan — spring-return switches Å, A, RA)  
+**Failure**: D1 and D2 showed descriptions "Återfjädrande strömst. 1-pol med DALI…" 
+(which belongs to A/Å). Codes A and Å never appeared in Pass 1 output.  
+**Root cause**: The legend contains D1–D5 (presence sensors) and below them Å, A, RA 
+(spring-return switches). Claude read the D1 code label, then grabbed the nearby 
+"Återfjädrande strömst. … med DALI…" description from the Å/A rows — confused by "DALI" 
+starting with "D". Å and A were then never extracted as separate codes.  
+**Fix added to prompt**:
+> "IMPORTANT — reading legend rows: each row's description belongs ONLY to that row's 
+> code. A 'D' inside a description word (e.g. 'DALI', 'MED DALI') is NOT a component 
+> code — it is part of the description text. Codes that are a single letter or Å/Ä/Ö 
+> (e.g. 'Å', 'A', 'RA') are valid component codes in their own rows — never merge them 
+> into an adjacent numbered code (D1, D2…)."
+
+---
+
 ## Template for new lessons
 
 ```
