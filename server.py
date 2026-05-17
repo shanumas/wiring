@@ -319,12 +319,29 @@ def search_drawing(name: str, q: str = ""):
     # page.rect.height (e.g. y=2057 on a page whose rect.height=1684 with rot=270).
     #
     # _to_display_bbox() applies the same rotation transform used by extract.py for
-    # component overlay bboxes, converting raw → display coordinate space so that
-    # search highlights land on top of the correct text in the rendered PNG.
+    # component overlay bboxes, converting raw → display coordinate space.
+    #
+    # Dark-text filter: room labels and grid references are printed in light grey
+    # (~0xd9d9d9).  Only spans whose colour ≤ 0x404040 are considered dark/regular
+    # text — the same threshold used by extract_ai.py.  We build a set of dark-span
+    # rects once and skip any search hit that does not intersect a dark span.
+    _DARK = 0x404040
+    dark_rects: list[fitz.Rect] = [
+        fitz.Rect(sp["bbox"])
+        for blk in page.get_text("dict")["blocks"]
+        if blk.get("type") == 0
+        for ln in blk["lines"]
+        for sp in ln["spans"]
+        if sp.get("color", 0) <= _DARK
+    ]
+
     seen: set[tuple] = set()
     matches: list[dict] = []
-    for term in dict.fromkeys([q, q.upper(), q.lower()]):   # preserve first-seen order
+    for term in dict.fromkeys([q, q.upper(), q.lower()]):
         for r in page.search_for(term):
+            # Skip if this hit overlaps no dark span (it's light/grey text)
+            if not any(r.intersects(dr) for dr in dark_rects):
+                continue
             dx0, dy0, dx1, dy1 = _to_display_bbox(
                 (r.x0, r.y0, r.x1, r.y1), page
             )
