@@ -141,9 +141,27 @@ the FÖRKLARINGAR section. The FÖRKLARINGAR cut alone (y=2002) did not exclude 
 **Root cause**: Swedish engineering drawings have a title block below the drawing
 that contains FÖRFRÅGNINGSUNDERLAG / RELATIONSRITNING checkboxes, RITAD AV, DATUM
 etc. Component codes printed there must not be counted.  
-**Fix in code**: `_count_from_pdf_text` and `_inject_variant_codes` now detect
-title block markers (RITAD, FÖRFRÅGNINGSUNDERLAG, HANDLÄGGARE …) and set a
-`titleblk_y_cut`. The effective cut-off is `min(legend_y_cut, titleblk_y_cut)`.
+**Fix in code**: `_count_from_pdf_text` and `_inject_variant_codes` detect title
+block markers (RITAD, FÖRFRÅGNINGSUNDERLAG, HANDLÄGGARE …) and record
+`titleblk_y_cut`. Exclusion is x-AND-y: a span is dropped only when
+`y ≥ titleblk_y_cut AND x < 300`. Spans in the drawing body (x > 600) at the
+same y-band are kept. The FÖRKLARINGAR `legend_y_cut` remains a full-width cut.
+Earlier v1 used `min(legend_y_cut, titleblk_y_cut)` as a single full-width cut
+which dropped legitimate P11 labels in 1.pdf (count fell 27 → 21). The x-AND-y
+approach fixes both the overcounting in 3.pdf and the regression in 1.pdf.
+
+---
+
+## L010 — Swedish description words (1-VÄGS, 2-VÄGS) must not be extracted as codes (2026-05-17)
+
+**Drawing**: 1.pdf (and any drawing with DM, EK, DP type outlets)  
+**Failure**: Code "1" appeared as a phantom component. Root entry: "DM 1-VÄGS UTTAG DISKMASKIN".  
+**Root cause**: Two failure points acting together:
+1. Pass 3 discovery used `(?<!\d)(\d{1,2})(?!\d)` which matched the "1" in "1-VÄGS" (not preceded/followed by digit). "1" appeared ≥3 times in legend text and was injected as a code.
+2. Claude AI passes read "1-VÄGS" in the legend description and extracted "1" as a component code instead of "DM".
+**Fix in code**: Extended `digit_pat` in Pass 3 to add `(?!-[A-Za-z\u00C0-\u024F])` so digits immediately followed by a hyphen+letter (Swedish description pattern) are not counted in `digit_freq`. "1-VÄGS", "2-VÄGS", "1-POL", "1-fas" no longer inflate the pure-digit frequency count.  
+**Fix added to prompt**:
+> "Swedish description words inside a legend entry text, such as '1-VÄGS', '2-VÄGS', '3-POL', '1-fas' describe the component type (1-way, 2-way, 3-pole) and are NOT codes. The code is the label BEFORE the dash-word, e.g. in 'DM 1-VÄGS UTTAG DISKMASKIN' the code is 'DM', not '1'."
 
 ---
 

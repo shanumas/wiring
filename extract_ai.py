@@ -124,15 +124,21 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
     w, h = page.rect.width, page.rect.height
 
     # ── 1. Locate the FÖRKLARINGAR label and the title block ─────────────────
-    # We compute two y cut-offs and use the lower (earlier) one:
+    # We compute two independent cut-offs:
     #
-    # • legend_y_cut   — text at/above FÖRKLARINGAR header (symbol table)
-    # • titleblk_y_cut — text at/above the drawing stamp / title block
-    #                    (Swedish drawings include RITAD AV, DATUM,
-    #                     FÖRFRÅGNINGSUNDERLAG etc. in a lower border strip;
-    #                     component codes printed there must not be counted)
+    # • legend_y_cut   — full-width horizontal cut: anything at y ≥ this value
+    #                    is in or below the FÖRKLARINGAR symbol table and must
+    #                    be excluded entirely.
+    # • titleblk_y_cut — partial-width cut: the drawing stamp lives in the left
+    #                    margin (x < TITLEBLK_X_MAX).  Spans are only excluded
+    #                    when BOTH y ≥ titleblk_y_cut AND x < TITLEBLK_X_MAX.
+    #                    This preserves component labels in the drawing body that
+    #                    share the same y-band as the title block strip.
     #
-    # The actual cut-off is min(legend_y_cut, titleblk_y_cut).
+    # Swedish engineering drawings:
+    #   title block strip  x ≈ 0 – 250  (RITAD AV, FÖRFRÅGNINGSUNDERLAG, …)
+    #   drawing body       x > 600      (floor plan, labels, legend)
+    TITLEBLK_X_MAX = 300   # anything left of this column is title-block territory
 
     _TITLEBLK_RE = re.compile(
         r'RITAD|FÖRFRÅGNINGSUNDERLAG|RELATIONSRITNING|BYGGHANDLING'
@@ -160,10 +166,6 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
                     if titleblk_y_cut is None or y < titleblk_y_cut:
                         titleblk_y_cut = y
 
-    # Use the more conservative (lower y) of the two cuts
-    cuts = [c for c in (legend_y_cut, titleblk_y_cut) if c is not None]
-    legend_y_cut = min(cuts) if cuts else None
-
     # ── 2. Build exclusion rect from Claude-supplied legend_bbox (if any) ────
     excl = None
     if legend_bbox and legend_bbox.get("x2", 0) > 0:
@@ -184,8 +186,14 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
         for ln in blk["lines"]:
             for sp in ln["spans"]:
                 bbox = sp["bbox"]
-                # Exclude text at or past the FÖRKLARINGAR section
-                if legend_y_cut is not None and bbox[1] >= legend_y_cut:
+                x0, y0 = bbox[0], bbox[1]
+                # Exclude text at or past the FÖRKLARINGAR section (full-width cut)
+                if legend_y_cut is not None and y0 >= legend_y_cut:
+                    continue
+                # Exclude title block strip: only left-margin spans at the stamp row
+                if (titleblk_y_cut is not None
+                        and y0 >= titleblk_y_cut
+                        and x0 < TITLEBLK_X_MAX):
                     continue
                 # Also exclude by Claude-identified bbox rect (if available)
                 if excl and fitz.Rect(bbox).intersects(excl):
@@ -198,21 +206,21 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
     counts = {}
     for c in codes:
         code = c["code"]
-        # Three boundary guards, in order of precedence:
-        # • Lookbehind (?<![A-Za-z…]) — code must not be preceded by a letter.
-        #   Digits are allowed before (packed spans: "P11P11N1" → N1 matches).
-        #   Spans are joined with "|" so cross-span letter bleed is prevented.
-        # • Lookahead (?!\d) — code must not be followed by a digit, so "D1"
-        #   won't match inside "D10" or "SLÖJD15" (the 1 is followed by 5).
-        # • Lookahead (?!-[A-Z0-9]) — code must not be followed by a hyphen
-        #   then alphanumeric, so "N1" won't match inside "N1-R".
-        #   A plain letter after the code IS still allowed, which handles packed
-        #   spans like "N1F2" where F starts the next code.
-        pattern = (
-            r"(?<![A-Za-z\u00C0-\u024F])"
-            + re.escape(code)
-            + r"(?!\d)(?!-[A-Z0-9])"
-        )
+        # Choose lookbehind based on whether the code starts with a digit.
+        #
+        # Mixed codes (P11, D1, N1-R): allow a digit immediately before so
+        # packed spans like "P11P11N1" are counted correctly.  Only block
+        # a preceding letter (which would mean the code is a substring of a
+        # longer token).
+        #
+        # Pure-digit codes (4, 12, …): ALSO block a preceding digit, otherwise
+        # "4" would match the trailing digit in "14" or "24".
+        if re.match(r'^\d', code):
+            lookbehind = r"(?<![A-Za-z\u00C0-\u024F\d])"   # no letter OR digit before
+        else:
+            lookbehind = r"(?<![A-Za-z\u00C0-\u024F])"     # no letter before (digits OK)
+
+        pattern = lookbehind + re.escape(code) + r"(?!\d)(?!-[A-Z0-9])"
         counts[code] = len(re.findall(pattern, full_text))
     return counts
 
@@ -458,12 +466,19 @@ Instructions:
    do NOT count symbols shown inside the legend box itself.
    IMPORTANT: Only use codes that actually appear in the component library above
    or that you can clearly read from the drawing labels. Do not invent codes.
+   Component codes may be a single digit (e.g. "4" for a 4-gang wall outlet,
+   "2" for a 2-gang outlet). If you see a bare digit repeated many times at
+   outlet/socket positions in the floor plan, it IS a component code — include it.
    Do NOT include as codes:
    • Cable specification labels (e.g. "FRHF 3G1,5", "5G2,5", "3×2,5") — these
      describe the cable type on a route, not an installed component.
    • Mounting height annotations ending in ÖFG or ÖFK (e.g. "1000ÖFG", "1900ÖFG").
    • Multi-word annotation phrases (e.g. "VIA NÖDSTOPP", "MED STANDARDCYLINDER").
    • Architectural drawing grid references printed in the margins (A, B, C, 1, 2 …).
+   • Swedish description words inside a legend entry text, such as "1-VÄGS",
+     "2-VÄGS", "3-POL", "1-fas" — these describe the component type (1-way,
+     2-way, 3-pole) and are NOT codes. The code is the label BEFORE the dash-word,
+     e.g. in "DM 1-VÄGS UTTAG DISKMASKIN" the code is "DM", not "1".
 2. For each code, check the component library above:
    • measurement_type "count"  → count all instances placed in the floor plan
      (rooms, corridors, shafts). Exclude any instance inside the legend /
@@ -783,6 +798,7 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
         r'|HANDLÄGGARE|ANSVARIG',
         re.IGNORECASE,
     )
+    _TITLEBLK_X_MAX = 300   # left-margin x boundary for title block strips
     legend_y_cut:   float | None = None
     titleblk_y_cut: float | None = None
 
@@ -799,9 +815,6 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
                     if titleblk_y_cut is None or y < titleblk_y_cut:
                         titleblk_y_cut = y
 
-    cuts = [c for c in (legend_y_cut, titleblk_y_cut) if c is not None]
-    legend_y_cut = min(cuts) if cuts else None
-
     # Two text buffers:
     # • full_text  — all spans; used for hyphen-variant discovery (variants of
     #               known codes must be counted regardless of text colour).
@@ -817,7 +830,14 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
             continue
         for ln in blk["lines"]:
             for sp in ln["spans"]:
-                if legend_y_cut is not None and sp["bbox"][1] >= legend_y_cut:
+                x0, y0 = sp["bbox"][0], sp["bbox"][1]
+                # Full-width cut at the FÖRKLARINGAR / legend section
+                if legend_y_cut is not None and y0 >= legend_y_cut:
+                    continue
+                # Title block strip: left-margin only (x < _TITLEBLK_X_MAX)
+                if (titleblk_y_cut is not None
+                        and y0 >= titleblk_y_cut
+                        and x0 < _TITLEBLK_X_MAX):
                     continue
                 parts_all.append(sp["text"])
                 if sp.get("color", 0) <= _DARK_THRESHOLD:
@@ -868,6 +888,33 @@ def _inject_variant_codes(pdf_path: str, count_items: list[dict],
     for m in general_pat.finditer(dark_text):
         _add(m.group(1), m.group(1))
 
+    # ── Pass 3: pure-digit codes (e.g. "4" = 4-vägguttag) ────────────────────
+    # Some Swedish electrical drawings use a bare digit as the component code
+    # (e.g. "4" for a 4-gang wall outlet). These are never caught by Pass 2
+    # because the pattern requires at least one letter.
+    # Strategy: count occurrences of each 1–2-digit token in dark_text.
+    # Only inject tokens that appear ≥ 3 times — this filters out one-off
+    # circuit/breaker numbers while catching repeatedly-placed outlet labels.
+    #
+    # IMPORTANT lookahead: also block digits that are immediately followed by a
+    # hyphen + letter, e.g. "1-VÄGS", "2-VÄGS", "1-POL", "1-fas".
+    # These are Swedish description words in legend text (1-way outlet, 1-pole),
+    # NOT component codes.  Without this guard, "1" would be injected as a
+    # phantom code because it appears frequently in legend descriptions like
+    # "DM 1-VÄGS UTTAG DISKMASKIN".
+    digit_pat = re.compile(
+        r"(?<!\d)"           # not preceded by a digit
+        r"(\d{1,2})"
+        r"(?!\d)"            # not followed by a digit
+        r"(?!-[A-Za-z\u00C0-\u024F])"  # not followed by hyphen+letter (1-VÄGS etc.)
+    )
+    digit_freq: dict[str, int] = {}
+    for m in digit_pat.finditer(dark_text):
+        digit_freq[m.group(1)] = digit_freq.get(m.group(1), 0) + 1
+    for digit, freq in digit_freq.items():
+        if freq >= 3:
+            _add(digit, digit)
+
     return count_items + extras
 
 
@@ -875,20 +922,27 @@ def _is_text_countable(code: str) -> bool:
     """
     Return True when the symbol code is safe to count via PDF text extraction.
 
-    A code is text-safe when it is at least 2 characters long and contains at
-    least one digit.  This ensures it is specific enough to avoid false matches
-    against common words or single Swedish letters (Å, A, T …) that would
-    produce thousands of spurious hits.
+    A code is text-safe when it meets one of:
+    • Pure digit(s), 1–2 chars: "4", "12" — component code like 4-vägguttag.
+      The (?<!\d) / (?!\d) boundary guards in the regex prevent "4" from
+      matching inside "400", "2700" etc.
+    • At least 2 chars long AND contains at least one digit: "P11", "D1", "V17".
+
+    Single letters without digits ("Å", "A", "OT") are NOT text-safe because
+    they appear too often in Swedish prose and produce false matches.
 
     Examples:
+      "4"    → True   (pure digit — 4-vägguttag)
       "P11"  → True   (letter + digits)
-      "D1"   → True   (letter + digit)
+      "D1"   → True
       "V17"  → True
       "F1"   → True
-      "Å"    → False  (single letter — use vision)
-      "A"    → False  (too common)
-      "OT"   → False  (no digit — could appear in Swedish text)
+      "Å"    → False  (single letter, no digit — use vision)
+      "A"    → False
+      "OT"   → False  (no digit)
     """
+    if re.match(r'^\d{1,2}$', code):
+        return True   # pure-digit code like "4"
     return len(code) >= 2 and bool(re.search(r"\d", code))
 
 

@@ -71,6 +71,10 @@ Instructions:
    Use the legend / förklaringar box only to understand what each code means —
    do NOT count symbols shown inside the legend box itself.
    IMPORTANT: Only use codes that actually appear in the drawing labels.
+   Do NOT treat Swedish description words as codes: "1-VÄGS", "2-VÄGS", "3-POL",
+   "1-fas" inside a legend entry describe the component type (1-way, 2-way, 3-pole)
+   — the code is the label printed BEFORE these words (e.g. in "DM 1-VÄGS UTTAG
+   DISKMASKIN" the code is "DM", not "1").
 2. For each code decide the measurement_type:
    • "count"  → point-installed items (fixtures, outlets, sensors, panels, switches …)
    • "length" → line-installed items (cable trays, cable ladders, conduits, pipes …)
