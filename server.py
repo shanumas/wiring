@@ -10,6 +10,8 @@ GET  /drawing/{name}/image        → rendered PNG (1.5×)
 GET  /drawing/{name}/components   → extract() result as JSON
 GET  /drawing/{name}/estimate     → estimate() result as JSON
 """
+import os
+import sys
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, Response, JSONResponse
@@ -18,6 +20,111 @@ from extract import extract, _to_display_bbox
 from extract_vector import extract_vectors
 from estimate import estimate, COST_TABLE, COST_FALLBACK_PER_M
 from extract_ai import build_component_library, load_component_library, extract_with_ai, load_ai_cache, _ai_cache_path
+
+
+# ── Startup API key checks ────────────────────────────────────────────────────
+def _check_keys() -> None:
+    """
+    Verify all required API keys are present and reachable before the server
+    starts accepting requests.  Exits with a clear error message if any check
+    fails so the operator knows exactly what to fix.
+    """
+    errors: list[str] = []
+
+    # ── 1. Anthropic (required) ───────────────────────────────────────────────
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        errors.append("ANTHROPIC_API_KEY is not set.")
+    else:
+        try:
+            import anthropic as _ant
+            resp = _ant.Anthropic(api_key=anthropic_key).messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=8,
+                messages=[{"role": "user", "content": "Reply with the word OK only."}],
+            )
+            reply = resp.content[0].text.strip()
+            print(f"  ✓ ANTHROPIC_API_KEY — model replied: {reply!r}")
+        except _ant.AuthenticationError:
+            errors.append("ANTHROPIC_API_KEY is set but rejected by Anthropic (wrong key?).")
+        except Exception as exc:
+            errors.append(f"ANTHROPIC_API_KEY check failed: {exc}")
+
+    # ── 2. OpenRouter / Qwen (required if key is set) ────────────────────────
+    # We do a real model call (tiny 1×1 PNG) so startup fails fast if the
+    # model is unavailable, quota-exceeded, or misconfigured.
+    or_key = os.environ.get("OPENROUTER_API_KEY", "")
+    qwen_model = os.environ.get("QWEN_MODEL", "qwen/qwen2.5-vl-72b-instruct")
+    if not or_key:
+        print("  ⚠ OPENROUTER_API_KEY not set — Qwen pass D will be disabled.")
+    else:
+        try:
+            import ssl as _ssl
+            import json as _json
+            import httpx as _httpx
+            try:
+                import truststore as _ts
+                _ssl_ctx = _ts.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
+            except ImportError:
+                import certifi as _certifi
+                _ssl_ctx = _certifi.where()
+
+            _http = _httpx.Client(verify=_ssl_ctx, follow_redirects=True, timeout=60.0)
+
+            # 1×1 white PNG — cheapest possible vision call to verify the model works.
+            _TINY_PNG = (
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQ"
+                "AABjkB6QAAAABJRU5ErkJggg=="
+            )
+            _probe = _http.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {or_key}", "Content-Type": "application/json"},
+                json={
+                    "model": qwen_model,
+                    "max_tokens": 5,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url",
+                             "image_url": {"url": f"data:image/png;base64,{_TINY_PNG}"}},
+                            {"type": "text", "text": "Reply with the single word OK."},
+                        ],
+                    }],
+                },
+            )
+            _body = _probe.text.strip()
+            if _probe.status_code != 200:
+                errors.append(
+                    f"Qwen model probe failed: HTTP {_probe.status_code}. Body: {_body[:300]!r}"
+                )
+            elif not _body:
+                errors.append(
+                    f"Qwen model probe failed: HTTP 200 but empty response body "
+                    f"(model={qwen_model!r}). Check OpenRouter credits / model availability."
+                )
+            else:
+                _data = _json.loads(_body)
+                if "error" in _data:
+                    errors.append(f"Qwen model probe error: {_data['error']}")
+                else:
+                    _reply = _data["choices"][0]["message"]["content"]
+                    print(f"  ✓ Qwen pass D — model {qwen_model!r} responded: {_reply!r}")
+        except _httpx.ConnectError as exc:
+            errors.append(f"Qwen model probe: cannot reach openrouter.ai — {exc}")
+        except Exception as exc:
+            errors.append(f"Qwen model probe failed: {exc}")
+
+    if errors:
+        print("\n" + "─" * 60)
+        print("STARTUP FAILED — API key problems:\n")
+        for e in errors:
+            print(f"  ✗ {e}")
+        print("─" * 60 + "\n")
+        sys.exit(1)
+
+
+print("Checking API keys …")
+_check_keys()
 
 app    = FastAPI()
 PDF_DIR = Path("pdf")

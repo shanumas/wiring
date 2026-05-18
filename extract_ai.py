@@ -29,7 +29,8 @@ from pathlib import Path
 
 _CLIENT = None        # lazy-init so import doesn't fail when key is absent
 _CLIENT_HAIKU = None  # cheaper model for counting passes
-_CLIENT_QWEN  = None  # OpenRouter client for Qwen pass D
+_CLIENT_QWEN  = None  # httpx.Client for OpenRouter (Qwen pass D)
+_QWEN_KEY     = None  # OpenRouter API key (cached alongside client)
 
 AI_CACHE_DIR = Path("ai_cache")
 AI_CACHE_DIR.mkdir(exist_ok=True)
@@ -48,21 +49,34 @@ def _client_haiku():
 
 def _client_qwen():
     """
-    Lazy-init OpenAI-compatible client pointing at OpenRouter.
+    Lazy-init a plain httpx.Client for calling OpenRouter directly.
     Returns None (instead of raising) if OPENROUTER_API_KEY is not set,
     so the rest of the pipeline degrades gracefully.
+    Using httpx directly avoids openai-SDK version skew with OpenRouter.
     """
-    global _CLIENT_QWEN
+    global _CLIENT_QWEN, _QWEN_KEY
     if _CLIENT_QWEN is None:
         key = os.environ.get("OPENROUTER_API_KEY", "")
         if not key:
             return None
         try:
-            from openai import OpenAI as _OpenAI
-            _CLIENT_QWEN = _OpenAI(
-                api_key=key,
-                base_url="https://openrouter.ai/api/v1",
+            import ssl
+            import httpx
+            # Use the OS native trust store (macOS Keychain / Windows cert store)
+            # so that system-trusted CA roots are available to httpx.
+            # Falls back to certifi if truststore is not installed.
+            try:
+                import truststore
+                _ssl_ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            except ImportError:
+                import certifi
+                _ssl_ctx = certifi.where()
+            _CLIENT_QWEN = httpx.Client(
+                verify=_ssl_ctx,
+                follow_redirects=True,
+                timeout=90.0,
             )
+            _QWEN_KEY = key
         except Exception:
             return None
     return _CLIENT_QWEN
@@ -735,10 +749,10 @@ Reply with ONLY a JSON object and nothing else:
 {{"{code}": <integer count>}}"""
 
     try:
-        resp = client.chat.completions.create(
-            model=QWEN_MODEL,
-            max_tokens=64,
-            messages=[{
+        payload = {
+            "model": QWEN_MODEL,
+            "max_tokens": 64,
+            "messages": [{
                 "role": "user",
                 "content": [
                     {"type": "image_url",
@@ -746,8 +760,24 @@ Reply with ONLY a JSON object and nothing else:
                     {"type": "text", "text": prompt},
                 ],
             }],
+        }
+        http_resp = client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {_QWEN_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
         )
-        text = resp.choices[0].message.content or ""
+        body = http_resp.text.strip()
+        if http_resp.status_code != 200 or not body:
+            print(f"  [Qwen] pass D HTTP {http_resp.status_code} for {code}, body={body[:300]!r}")
+            return None
+        data = http_resp.json()
+        if "error" in data:
+            print(f"  [Qwen] pass D API error for {code}: {data['error']}")
+            return None
+        text = data["choices"][0]["message"]["content"] or ""
         result = _extract_json(text)
         return int(result.get(code, 0))
     except Exception as exc:
