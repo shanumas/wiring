@@ -534,6 +534,9 @@ def search_drawing(name: str, q: str = ""):
         return JSONResponse({"query": q, "matches": [], "count": 0})
 
     pdf_path = PDF_DIR / name
+    if not pdf_path.exists():
+        # Image-based project — no PDF text layer to search
+        return JSONResponse({"query": q, "matches": [], "count": 0})
     doc  = fitz.open(str(pdf_path))
     page = doc[0]
 

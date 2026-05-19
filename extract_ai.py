@@ -1447,6 +1447,44 @@ Example: {{"{symbols[0]['visual_id']}": 2}}"""
         return {s["visual_id"]: 0 for s in symbols}
 
 
+def _count_text_labels_in_tile(tile_b64: str, items: list[dict]) -> dict[str, int]:
+    """
+    Count how many times each code appears as a TEXT ANNOTATION in one tile.
+    Used for components from the description library that have no legend symbol.
+    Returns {code: count}.
+    """
+    if not items:
+        return {}
+    codes_block = "\n".join(
+        f'  "{it["code"]}" — {it["name"]}'
+        for it in items
+    )
+    prompt = f"""Count how many times each code appears as a TEXT LABEL or ANNOTATION in this
+building-services floor plan tile.  Look for the code written as a standalone text next to
+a device or area — not inside a legend or title block.
+Count only labels FULLY visible in the tile; ignore any cut off at the image edge.
+
+Codes to find:
+{codes_block}
+
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
+The very first character must be {{ and the last must be }}.
+Example: {{"{items[0]['code']}": 2}}"""
+
+    resp = _client().messages.create(
+        model=SONNET, max_tokens=256,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": tile_b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        result = _extract_json(resp.content[0].text)
+        return {it["code"]: int(result.get(it["code"], 0)) for it in items}
+    except Exception:
+        return {it["code"]: 0 for it in items}
+
+
 def _analyse_legend_image(legend_b64: str, component_library: dict | None) -> list[dict]:
     """
     Send legend.png to Claude to identify all visual symbol variants.
@@ -1708,6 +1746,42 @@ def extract_with_images(legend_path: str, body_path: str,
     count_syms  = [s for s in symbols if s.get("measurement_type") == "count"]
     length_syms = [s for s in symbols if s.get("measurement_type") != "count"]
 
+    # ── Extra items from component library not represented in the legend ──────
+    # They have no dedicated legend symbol so we count them visually using
+    # their library name/notes as the description in the tile-counting prompt.
+    legend_codes = {s["code"] for s in symbols}
+    extra_count_items: list[dict] = []
+    extra_length_items: list[dict] = []
+    if component_library:
+        for c in component_library.get("components", []):
+            if c["code"] in legend_codes:
+                continue
+            entry = {
+                "visual_id":        c["code"],
+                "code":             c["code"],
+                "name":             c["name"],
+                "measurement_type": c.get("measurement_type", "count"),
+                "description":      c.get("notes", "") or c["name"],
+            }
+            if entry["measurement_type"] == "count":
+                extra_count_items.append(entry)
+            else:
+                extra_length_items.append(entry)
+
+    _n_extra = len(extra_count_items) + len(extra_length_items)
+    if _n_extra:
+        print(f"  [AI] {_n_extra} extra item(s) from library not in legend:")
+        for it in extra_count_items + extra_length_items:
+            print(f"    {it['code']!r} — {it['name']} [{it['measurement_type']}]")
+
+    # Emit legend-done progress (shown in phase bar before tile passes start)
+    _extra_note = f" + {_n_extra} library extras" if _n_extra else ""
+    _emit({"type": "progress",
+           "msg": f"Legend: {len(symbols)} symbol(s) found{_extra_note}"})
+
+    # Length extras go into Step 3; count extras get their own text-scan pass below
+    length_syms = length_syms + extra_length_items
+
     # ── Step 2: count each visual variant ────────────────────────────────────
     qwen_ok = _client_qwen() is not None
     print(f"  [AI] Qwen pass D {'enabled' if qwen_ok else 'disabled'}")
@@ -1727,6 +1801,7 @@ def extract_with_images(legend_path: str, body_path: str,
         print(f"\n  Pass {pass_label} — {ROWS}×{COLS} tiled:")
         for r in range(ROWS):
             for c in range(COLS):
+                tile_num = r * COLS + c + 1
                 try:
                     tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
                     tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
@@ -1734,6 +1809,8 @@ def extract_with_images(legend_path: str, body_path: str,
                         pass_sum[vid] += cnt
                 except Exception as e:
                     print(f"    tile({r},{c}) failed: {e}")
+                _emit({"type": "progress",
+                       "msg": f"Pass {pass_label}: {tile_num}/{ROWS*COLS} tiles"})
         tile_passes.append(pass_sum)
         print(f"    { {k: v for k, v in pass_sum.items() if v > 0} }")
 
@@ -1813,6 +1890,61 @@ def extract_with_images(legend_path: str, body_path: str,
             "d":          d,
         })
 
+    # ── Extra library items: Qwen full-image (falls back to tiled text scan) ───
+    # These have no legend visual reference, so tiled A/B/C cannot recognise them.
+    # Qwen sees the complete image and can count by visual appearance + name hint.
+    if extra_count_items:
+        if qwen_ok:
+            _emit({"type": "phase", "phase": "qwen_extra",
+                   "msg": f"Qwen: {len(extra_count_items)} unlisted item(s)…"})
+            print(f"\n  Extra items (Qwen full-image):")
+            for sym in extra_count_items:
+                vid  = sym["visual_id"]
+                desc = sym.get("description") or sym["name"]
+                d    = _count_variant_qwen(body_b64, vid, sym["code"], sym["name"], desc)
+                best = d if d is not None else 0
+                conf = "high" if d is not None else "low"
+                d_str = str(d) if d is not None else "—"
+                print(f"    {vid}: D={d_str}  → {best} ({conf})")
+                counts[vid] = {"a": None, "b": None, "c": None,
+                               "d": d, "final": best, "confidence": conf}
+                _emit({
+                    "type": "symbol", "visual_id": vid,
+                    "code": sym["code"], "name": sym["name"],
+                    "count": best, "confidence": conf,
+                    "a": None, "b": None, "c": None, "d": d,
+                })
+        else:
+            # Fallback when Qwen is unavailable: tiled text-label scan
+            _emit({"type": "phase", "phase": "text_pass",
+                   "msg": f"Text-scanning {len(extra_count_items)} unlisted item(s)…"})
+            print(f"\n  Extra items text pass — {ROWS}×{COLS} tiled:")
+            text_sum = {it["code"]: 0 for it in extra_count_items}
+            for r in range(ROWS):
+                for c_idx in range(COLS):
+                    tile_num = r * COLS + c_idx + 1
+                    try:
+                        tb = _tile_png_b64(body_path, r, c_idx, ROWS, COLS)
+                        tc = _count_text_labels_in_tile(tb, extra_count_items)
+                        for code, cnt in tc.items():
+                            text_sum[code] += cnt
+                    except Exception as e:
+                        print(f"    text tile({r},{c_idx}) failed: {e}")
+                    _emit({"type": "progress",
+                           "msg": f"Text scan: {tile_num}/{ROWS*COLS} tiles"})
+            print(f"    { {k: v for k, v in text_sum.items() if v > 0} }")
+            for it in extra_count_items:
+                code = it["code"]
+                cnt  = text_sum.get(code, 0)
+                counts[code] = {"a": None, "b": None, "c": None, "d": None,
+                                "final": cnt, "confidence": "medium", "text_scan": cnt}
+                _emit({
+                    "type": "symbol", "visual_id": code,
+                    "code": code, "name": it["name"],
+                    "count": cnt, "confidence": "medium",
+                    "a": None, "b": None, "c": None, "d": None,
+                })
+
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}
     if length_syms:
@@ -1831,7 +1963,8 @@ def extract_with_images(legend_path: str, body_path: str,
     components: list[dict] = []
     summary:    list[dict] = []
 
-    for i, sym in enumerate(symbols):
+    all_symbols = count_syms + extra_count_items + length_syms
+    for i, sym in enumerate(all_symbols):
         vid   = sym["visual_id"]
         code  = sym["code"]
         name  = sym["name"]
@@ -1839,9 +1972,10 @@ def extract_with_images(legend_path: str, body_path: str,
         color = _color(vid)
 
         if mtype == "count":
-            ct   = counts.get(vid, {})
-            qty  = ct.get("final", 0)
-            conf = ct.get("confidence", "unknown")
+            ct     = counts.get(vid, {})
+            qty    = ct.get("final", 0)
+            conf   = ct.get("confidence", "unknown")
+            method = "vision"
             components.append({
                 "id": f"IMG_{vid}_{i}", "type": vid, "name": name,
                 "en_name": "", "color": color, "size": None,
@@ -1855,10 +1989,10 @@ def extract_with_images(legend_path: str, body_path: str,
                 "system": vid, "name": name, "orientation": "horizontal",
                 "width_mm": None, "ok_ofg_mm": None, "uk_ofg_mm": None,
                 "fire_rating": None, "measurement_type": "count", "unit": "pcs",
-                "count": qty, "count_method": "vision", "count_confidence": conf,
+                "count": qty, "count_method": method, "count_confidence": conf,
                 "count_grid_a": ct.get("a"), "count_grid_b": ct.get("b"),
                 "count_grid_c": ct.get("c"), "count_grid_d": ct.get("d"),
-                "count_text": None, "count_vision": None,
+                "count_text": ct.get("text_scan"), "count_vision": None,
                 "original_code": code,
             })
         else:

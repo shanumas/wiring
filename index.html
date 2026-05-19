@@ -193,20 +193,43 @@
     }
     #hide-zeros-bar label { display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none; }
 
-    /* ── streaming phase bar ── */
+    /* ── streaming activity log (Claude Code style) ── */
     #stream-phase-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
       background: #f0f4fa;
       border-bottom: 1px solid #d8e0ee;
-      font-size: 10px;
-      font-weight: 600;
-      color: #3a5080;
       position: sticky;
       top: 0;
       z-index: 2;
+    }
+    #stream-log {
+      padding: 5px 14px 2px;
+      overflow: hidden;
+    }
+    .log-entry {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      font-size: 9.5px;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      color: #2a6a3a;
+      padding: 1.5px 0;
+      opacity: 0.8;
+    }
+    .log-entry::before {
+      content: '✓';
+      font-size: 10px;
+      flex-shrink: 0;
+      color: #2a7a3a;
+    }
+    #stream-current {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px 6px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #3a5080;
+      border-top: 1px solid rgba(80,100,160,0.12);
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .stream-spinner {
@@ -861,18 +884,17 @@
   }
 
   function showRunAIProgress(name) {
-    // In-progress means streaming started in another tab; poll until done
     const list = document.getElementById('comp-list');
     list.innerHTML = `
       <div id="stream-phase-bar">
-        <span class="stream-spinner"></span>
-        <span id="stream-phase-text">AI extraction in progress…</span>
+        <div id="stream-log"></div>
+        <div id="stream-current">
+          <span class="stream-spinner"></span>
+          <span id="stream-phase-text">AI extraction in progress…</span>
+        </div>
       </div>`;
     document.getElementById('est-list').innerHTML = '';
-    setTimeout(async () => {
-      currentDrawing = null;
-      await switchDrawing(name);
-    }, 5000);
+    setTimeout(async () => { currentDrawing = null; await switchDrawing(name); }, 5000);
   }
 
   // ── streaming AI extraction ────────────────────────────────────────────────
@@ -880,8 +902,11 @@
     const list = document.getElementById('comp-list');
     list.innerHTML = `
       <div id="stream-phase-bar">
-        <span class="stream-spinner"></span>
-        <span id="stream-phase-text">Starting…</span>
+        <div id="stream-log"></div>
+        <div id="stream-current">
+          <span class="stream-spinner"></span>
+          <span id="stream-phase-text">Starting…</span>
+        </div>
       </div>
       <div class="tbl-head">
         <span>Code</span><span>Description</span><span class="num">Qty</span>
@@ -937,29 +962,58 @@
     document.getElementById('recompute-btn').textContent = '↻ Running…';
     document.getElementById('recompute-btn').disabled = true;
 
+    // ── activity log helpers ──────────────────────────────────────────────
+    let _currentMsg = 'Starting…';
+
+    function _pushLog(text) {
+      if (!text || text === 'Starting…') return;
+      const log = document.getElementById('stream-log');
+      if (!log) return;
+      const d = document.createElement('div');
+      d.className = 'log-entry';
+      d.textContent = text;
+      log.appendChild(d);
+      // keep at most 7 completed entries visible
+      while (log.children.length > 7) log.removeChild(log.firstChild);
+    }
+
+    function _setPhase(msg) {
+      _pushLog(_currentMsg);   // move current step into log as "done"
+      _currentMsg = msg;
+      const el = document.getElementById('stream-phase-text');
+      if (el) el.textContent = msg;
+    }
+
+    function _setProgress(msg) {
+      _currentMsg = msg;       // update in-place (not pushed to log yet)
+      const el = document.getElementById('stream-phase-text');
+      if (el) el.textContent = msg;
+    }
+
+    // ── fetch + SSE parse ─────────────────────────────────────────────────
     const url = `/drawing/${encodeURIComponent(name)}/run-ai-stream${force ? '?force=true' : ''}`;
     let resp;
     try {
       resp = await fetch(url, { method: 'POST' });
     } catch (err) {
-      document.getElementById('stream-phase-text').textContent = `✗ Network error: ${err.message}`;
-      document.querySelector('.stream-spinner').style.display = 'none';
+      _setProgress(`✗ Network error: ${err.message}`);
+      document.querySelector('.stream-spinner')?.remove();
       document.getElementById('recompute-btn').textContent = '↻ Recompute';
       document.getElementById('recompute-btn').disabled = false;
       return;
     }
     if (!resp.ok) {
-      const msg = await resp.text();
-      document.getElementById('stream-phase-text').textContent = `✗ ${msg}`;
+      _setProgress(`✗ ${await resp.text()}`);
       document.querySelector('.stream-spinner')?.remove();
       document.getElementById('recompute-btn').textContent = '↻ Recompute';
       document.getElementById('recompute-btn').disabled = false;
       return;
     }
 
-    const reader = resp.body.getReader();
-    const dec    = new TextDecoder();
-    let buf = '';
+    const reader  = resp.body.getReader();
+    const dec     = new TextDecoder();
+    let buf       = '';
+    let nSymbols  = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -967,18 +1021,22 @@
       buf += dec.decode(value, { stream: true });
       let idx;
       while ((idx = buf.indexOf('\n\n')) !== -1) {
-        const msg = buf.slice(0, idx);
+        const chunk = buf.slice(0, idx);
         buf = buf.slice(idx + 2);
-        for (const line of msg.split('\n')) {
+        for (const line of chunk.split('\n')) {
           if (!line.startsWith('data: ')) continue;
           try {
             const ev = JSON.parse(line.slice(6));
             if (ev.type === 'phase') {
-              const el = document.getElementById('stream-phase-text');
-              if (el) el.textContent = ev.msg;
+              _setPhase(ev.msg);
+            } else if (ev.type === 'progress') {
+              _setProgress(ev.msg);
             } else if (ev.type === 'symbol') {
+              nSymbols++;
+              _setProgress(`Counting: ${nSymbols} symbol(s)…`);
               addStreamRow(ev);
             } else if (ev.type === 'done') {
+              _pushLog(_currentMsg);
               document.getElementById('stream-phase-bar')?.remove();
               document.getElementById('recompute-btn').textContent = '↻ Recompute';
               document.getElementById('recompute-btn').disabled = false;
@@ -986,9 +1044,9 @@
               currentDrawing = null;
               await switchDrawing(prev);
             } else if (ev.type === 'error') {
-              const el = document.getElementById('stream-phase-text');
-              if (el) { el.textContent = `✗ ${ev.message}`; el.style.color = '#9c2c2c'; }
-              document.querySelector('.stream-spinner')?.remove();
+              _setProgress(`✗ ${ev.message}`);
+              document.getElementById('stream-current')
+                ?.querySelector('.stream-spinner')?.remove();
               document.getElementById('recompute-btn').textContent = '↻ Recompute';
               document.getElementById('recompute-btn').disabled = false;
             }
@@ -1366,8 +1424,11 @@
           const dPart = s.count_grid_d != null
             ? ` <span title="Qwen validator" style="color:#5a3a7a">D:${s.count_grid_d}</span>`
             : ` <span title="Qwen not configured" style="color:#aaaaaa">D:—</span>`;
+          const abcStr = s.count_grid_a != null
+            ? `A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}`
+            : `<span style="color:#888;font-style:italic">visual-only</span>`;
           validatorHtml = `<div class="comp-validators" style="color:${confColor}">
-            ${icon} A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}${dPart}${manualNote}
+            ${icon} ${abcStr}${dPart}${manualNote}
           </div>`;
         }
       }
