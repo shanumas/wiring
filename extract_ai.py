@@ -1724,7 +1724,7 @@ def extract_with_images(legend_path: str, body_path: str,
 
     # ── Voting rule (non-variant symbols) ────────────────────────────────────
     #   1. ≥3 of [A,B,C,D] agree        → that value  (high)
-    #   2. A or C agrees with D          → D           (medium)
+    #   2. A or C agrees with D          → D           (high)
     #   3. A == C                        → A           (medium)
     #   4. All other cases               → D           (low)
     def _vote(a: int, b: int, c: int, d: int | None) -> tuple[int, str]:
@@ -1733,17 +1733,23 @@ def extract_with_images(legend_path: str, body_path: str,
             if vals.count(v) >= 3:
                 return v, "high"
         if d is not None and (a == d or c == d):
-            return d, "medium"
+            return d, "high"
         if a == c:
             return a, "medium"
         if d is not None:
             return d, "low"
         return a, "low"   # D unavailable fallback
 
+    # A symbol is a true visual variant only when multiple legend entries share
+    # the same code (e.g. two different "A" symbols). A unique code like "C" that
+    # Claude named "circle_C" is NOT a variant even though visual_id != code.
+    from collections import Counter as _Counter
+    _code_freq = _Counter(s["code"] for s in count_syms)
+
     print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
     for sym in count_syms:
         vid        = sym["visual_id"]
-        is_variant = vid != sym["code"]   # multiple visual variants share the same text label
+        is_variant = _code_freq[sym["code"]] > 1   # true only when code is shared
         a   = tile_passes[0].get(vid, 0)
         b   = tile_passes[1].get(vid, 0)
         c   = tile_passes[2].get(vid, 0)
