@@ -1689,30 +1689,31 @@ def extract_with_images(legend_path: str, body_path: str,
 
     counts: dict[str, dict] = {}
 
-    # ── Pass A: 3×3 tiled count (straight grid, no offset) ───────────────────
-    # 9 tiles, 9 API calls total for ALL symbols combined.
-    # No offset — avoids the tile-overlap bug that offset grids cause.
+    # ── Passes A / B / C: independent 3×3 tiled counts ──────────────────────
+    # Same straight grid (no offsets), three independent API call sets.
+    # Model stochasticity means they can diverge — the voting rule below
+    # exploits agreement to pick the right answer.
     ROWS, COLS = 3, 3
-    pass_a: dict[str, int] = {s["visual_id"]: 0 for s in count_syms}
-    print(f"\n  Pass A — {ROWS}×{COLS} tiled count ({ROWS*COLS} calls):")
-    for r in range(ROWS):
-        for c in range(COLS):
-            try:
-                tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
-                tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
-                for vid, cnt in tile_cnt.items():
-                    pass_a[vid] += cnt
-            except Exception as e:
-                print(f"    tile({r},{c}) failed: {e}")
-    print(f"    { {k: v for k, v in pass_a.items() if v > 0} }")
+    tile_passes: list[dict[str, int]] = []
+    for pass_label in ["A", "B", "C"]:
+        pass_sum = {s["visual_id"]: 0 for s in count_syms}
+        print(f"\n  Pass {pass_label} — {ROWS}×{COLS} tiled:")
+        for r in range(ROWS):
+            for c in range(COLS):
+                try:
+                    tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
+                    tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
+                    for vid, cnt in tile_cnt.items():
+                        pass_sum[vid] += cnt
+                except Exception as e:
+                    print(f"    tile({r},{c}) failed: {e}")
+        tile_passes.append(pass_sum)
+        print(f"    { {k: v for k, v in pass_sum.items() if v > 0} }")
 
     # ── Pass D: Qwen full-image count ─────────────────────────────────────────
-    # Qwen is usually accurate on the full image.
-    # When Qwen undercounts, max(A, D) falls back to A.
-    # When A misses boundary symbols, max(A, D) falls back to D.
     qwen_counts: dict[str, int | None] = {}
     if qwen_ok:
-        print(f"  Pass D — Qwen full-image:")
+        print(f"\n  Pass D — Qwen full-image:")
         for sym in count_syms:
             vid = sym["visual_id"]
             d   = _count_variant_qwen(body_b64, vid, sym["code"],
@@ -1721,29 +1722,43 @@ def extract_with_images(legend_path: str, body_path: str,
             if d is not None:
                 print(f"    {vid}: {d}")
 
-    # ── Final: max(A, D) ──────────────────────────────────────────────────────
-    # Both passes fail by undercounting, not overcounting — so the higher
-    # result is always the better estimate of the true count.
-    # Offset-tiled B/C passes were removed: they caused tile overlap (clamping
-    # bug) which systematically overcounted boundary symbols.
-    print(f"\n  {'Code':<20} {'A':>4} {'D':>4}  result  conf")
+    # ── Voting rule ───────────────────────────────────────────────────────────
+    # Priority (highest confidence first):
+    #   1. ≥3 of [A,B,C,D] agree       → that value  (high)
+    #   2. A == D                        → A           (high)
+    #   3. Any other pair agrees         → that value  (medium)
+    #   4. All four different            → A           (low)
+    def _vote(a: int, b: int, c: int, d: int | None) -> tuple[int, str]:
+        vals = [a, b, c] + ([d] if d is not None else [])
+        # Rule 1
+        for v in set(vals):
+            if vals.count(v) >= 3:
+                return v, "high"
+        # Rule 2
+        if d is not None and a == d:
+            return a, "high"
+        # Rule 3 — pairs other than (A,D)
+        pairs = [(a, b), (a, c), (b, c)] + ([(b, d), (c, d)] if d is not None else [])
+        for x, y in pairs:
+            if x == y:
+                return x, "medium"
+        # Rule 4
+        return a, "low"
+
+    print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
     for sym in count_syms:
         vid = sym["visual_id"]
-        a   = pass_a.get(vid, 0)
+        a   = tile_passes[0].get(vid, 0)
+        b   = tile_passes[1].get(vid, 0)
+        c   = tile_passes[2].get(vid, 0)
         d   = qwen_counts.get(vid) if qwen_ok else None
 
-        best = max(a, d) if d is not None else a
-
-        if d is None:
-            conf = "medium"
-        else:
-            spread = abs(a - d)
-            conf = "high" if spread <= 1 else ("medium" if spread <= max(2, best * 0.20) else "low")
+        best, conf = _vote(a, b, c, d)
 
         d_str = str(d) if d is not None else "—"
         icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
-        print(f"    {vid:<18} A={a} D={d_str}  → {best} ({conf}) {icon}")
-        counts[vid] = {"a": a, "b": None, "c": None, "d": d, "final": best, "confidence": conf}
+        print(f"    {vid:<18} A={a} B={b} C={c} D={d_str}  → {best} ({conf}) {icon}")
+        counts[vid] = {"a": a, "b": b, "c": c, "d": d, "final": best, "confidence": conf}
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}
