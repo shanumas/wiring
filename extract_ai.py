@@ -1689,37 +1689,30 @@ def extract_with_images(legend_path: str, body_path: str,
 
     counts: dict[str, dict] = {}
 
-    # ── Tiled passes A / B / C ────────────────────────────────────────────────
-    # Each pass tiles the body into a 3×3 grid (9 tiles, 9 API calls per pass).
-    # Passes use different grid offsets so boundary symbols missed in pass A
-    # become fully visible in pass B or C.
-    # Final count = MAX across passes (undercounting is the failure mode —
-    # the highest pass is the best lower bound on the true count).
+    # ── Pass A: 3×3 tiled count (straight grid, no offset) ───────────────────
+    # 9 tiles, 9 API calls total for ALL symbols combined.
+    # No offset — avoids the tile-overlap bug that offset grids cause.
     ROWS, COLS = 3, 3
-    OFFSETS = [(0.0, 0.0), (0.5, 0.5), (0.25, 0.75)]   # A, B, C offsets
+    pass_a: dict[str, int] = {s["visual_id"]: 0 for s in count_syms}
+    print(f"\n  Pass A — {ROWS}×{COLS} tiled count ({ROWS*COLS} calls):")
+    for r in range(ROWS):
+        for c in range(COLS):
+            try:
+                tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
+                tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
+                for vid, cnt in tile_cnt.items():
+                    pass_a[vid] += cnt
+            except Exception as e:
+                print(f"    tile({r},{c}) failed: {e}")
+    print(f"    { {k: v for k, v in pass_a.items() if v > 0} }")
 
-    tile_pass_totals: list[dict[str, int]] = []
-    print(f"\n  Counting {len(count_syms)} symbol variant(s) via {ROWS}×{COLS} tiling "
-          f"({len(OFFSETS)} passes, offset grid):")
-    for pass_idx, (ox, oy) in enumerate(OFFSETS):
-        pass_label = ["A", "B", "C"][pass_idx]
-        pass_sum = {s["visual_id"]: 0 for s in count_syms}
-        for r in range(ROWS):
-            for c in range(COLS):
-                try:
-                    tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS, ox, oy)
-                    tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
-                    for vid, cnt in tile_cnt.items():
-                        pass_sum[vid] += cnt
-                except Exception as e:
-                    print(f"    Pass {pass_label} tile({r},{c}) failed: {e}")
-        tile_pass_totals.append(pass_sum)
-        print(f"    Pass {pass_label}: { {k: v for k, v in pass_sum.items() if v > 0} }")
-
-    # ── Qwen pass D (full image, per symbol) ─────────────────────────────────
+    # ── Pass D: Qwen full-image count ─────────────────────────────────────────
+    # Qwen is usually accurate on the full image.
+    # When Qwen undercounts, max(A, D) falls back to A.
+    # When A misses boundary symbols, max(A, D) falls back to D.
     qwen_counts: dict[str, int | None] = {}
     if qwen_ok:
-        print(f"  Qwen pass D:")
+        print(f"  Pass D — Qwen full-image:")
         for sym in count_syms:
             vid = sym["visual_id"]
             d   = _count_variant_qwen(body_b64, vid, sym["code"],
@@ -1728,29 +1721,29 @@ def extract_with_images(legend_path: str, body_path: str,
             if d is not None:
                 print(f"    {vid}: {d}")
 
-    # ── Max-based aggregation per symbol ──────────────────────────────────────
-    # Undercounting is systematic: majority vote of undercounts = undercount.
-    # The highest result across independent passes is the best lower bound.
-    # Confidence: how consistent the passes are relative to the max.
-    print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
+    # ── Final: max(A, D) ──────────────────────────────────────────────────────
+    # Both passes fail by undercounting, not overcounting — so the higher
+    # result is always the better estimate of the true count.
+    # Offset-tiled B/C passes were removed: they caused tile overlap (clamping
+    # bug) which systematically overcounted boundary symbols.
+    print(f"\n  {'Code':<20} {'A':>4} {'D':>4}  result  conf")
     for sym in count_syms:
         vid = sym["visual_id"]
-        a   = tile_pass_totals[0].get(vid, 0)
-        b   = tile_pass_totals[1].get(vid, 0)
-        c   = tile_pass_totals[2].get(vid, 0)
+        a   = pass_a.get(vid, 0)
         d   = qwen_counts.get(vid) if qwen_ok else None
 
-        claude_max = max(a, b, c)
-        best = max(claude_max, d) if d is not None else claude_max
+        best = max(a, d) if d is not None else a
 
-        all_vals = [a, b, c] + ([d] if d is not None else [])
-        spread = max(all_vals) - min(all_vals)
-        conf = "high" if spread <= 1 else ("medium" if spread <= max(2, best * 0.20) else "low")
+        if d is None:
+            conf = "medium"
+        else:
+            spread = abs(a - d)
+            conf = "high" if spread <= 1 else ("medium" if spread <= max(2, best * 0.20) else "low")
 
         d_str = str(d) if d is not None else "—"
         icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
-        print(f"    {vid:<18} A={a} B={b} C={c} D={d_str}  → {best} ({conf}) {icon}")
-        counts[vid] = {"a": a, "b": b, "c": c, "d": d, "final": best, "confidence": conf}
+        print(f"    {vid:<18} A={a} D={d_str}  → {best} ({conf}) {icon}")
+        counts[vid] = {"a": a, "b": None, "c": None, "d": d, "final": best, "confidence": conf}
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}
