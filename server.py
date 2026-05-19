@@ -19,7 +19,9 @@ import fitz
 from extract import extract, _to_display_bbox
 from extract_vector import extract_vectors
 from estimate import estimate, COST_TABLE, COST_FALLBACK_PER_M
-from extract_ai import build_component_library, load_component_library, extract_with_ai, load_ai_cache, _ai_cache_path
+from extract_ai import (build_component_library, load_component_library,
+                        extract_with_ai, load_ai_cache, _ai_cache_path,
+                        extract_with_images, load_images_cache, _images_cache_key)
 
 
 # ── Startup API key checks ────────────────────────────────────────────────────
@@ -30,10 +32,13 @@ def _check_keys() -> None:
     fails so the operator knows exactly what to fix.
     """
     errors: list[str] = []
+    skip_anthropic = os.environ.get("SKIP_ANTHROPIC", "").lower() in ("1", "true", "yes")
 
-    # ── 1. Anthropic (required) ───────────────────────────────────────────────
+    # ── 1. Anthropic ─────────────────────────────────────────────────────────
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
+    if skip_anthropic:
+        print("  ⚠ ANTHROPIC_API_KEY check skipped (SKIP_ANTHROPIC=1) — AI passes disabled.")
+    elif not anthropic_key:
         errors.append("ANTHROPIC_API_KEY is not set.")
     else:
         try:
@@ -71,10 +76,10 @@ def _check_keys() -> None:
 
             _http = _httpx.Client(verify=_ssl_ctx, follow_redirects=True, timeout=60.0)
 
-            # 1×1 white PNG — cheapest possible vision call to verify the model works.
+            # 16×16 white PNG — small but meets provider minimum size requirements.
             _TINY_PNG = (
-                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQ"
-                "AABjkB6QAAAABJRU5ErkJggg=="
+                "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGElEQVQ4jWNg"
+                "YGD4z8BQDwAAAP//AwAI/AL+hc2rNAAAAABJRU5ErkJggg=="
             )
             _probe = _http.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -259,13 +264,21 @@ def _process(pdf_path: Path) -> dict:
     }
 
 
+LEGEND_IMG = Path("images/legend.png")
+BODY_IMG   = Path("images/body.png")
+
+
 def _run_ai(pdf_path: Path) -> None:
     """Explicitly call Claude for one PDF and update the in-memory cache entry."""
     name = pdf_path.name
     _ai_running.add(name)
     print(f"  [AI] running extraction for {name} …")
     try:
-        ai_comp = extract_with_ai(str(pdf_path), _component_library)
+        if LEGEND_IMG.exists() and BODY_IMG.exists():
+            print(f"  [AI] using pre-split images (images/legend.png + images/body.png)")
+            ai_comp = extract_with_images(str(LEGEND_IMG), str(BODY_IMG), _component_library)
+        else:
+            ai_comp = extract_with_ai(str(pdf_path), _component_library)
         ai_est  = _estimate_ai(ai_comp)
         _cache[name]["components_ai"] = ai_comp
         _cache[name]["estimate_ai"]   = ai_est
@@ -377,7 +390,14 @@ def drawing_run_ai(name: str, force: bool = False):
         cache_file = _ai_cache_path(str(PDF_DIR / name))
         if cache_file.exists():
             cache_file.unlink()
-            print(f"  [AI] cache cleared for {name}")
+            print(f"  [AI] PDF cache cleared for {name}")
+        if LEGEND_IMG.exists() and BODY_IMG.exists():
+            from extract_ai import AI_CACHE_DIR
+            img_key  = _images_cache_key(str(LEGEND_IMG), str(BODY_IMG))
+            img_cache = AI_CACHE_DIR / f"images_{img_key}.json"
+            if img_cache.exists():
+                img_cache.unlink()
+                print(f"  [AI] image cache cleared ({img_key})")
         _cache[name]["components_ai"] = None
         _cache[name]["estimate_ai"]   = None
     _run_ai(PDF_DIR / name)

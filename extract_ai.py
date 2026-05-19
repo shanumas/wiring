@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import re
+import struct
 import fitz
 from pathlib import Path
 
@@ -1352,6 +1353,399 @@ _PALETTE = [
 
 def _color(code: str) -> str:
     return _COLORS.get(code, _PALETTE[sum(ord(c) for c in code) % len(_PALETTE)])
+
+
+# ── Image-based extraction (pre-split legend + body PNGs) ────────────────────
+
+def _images_cache_key(legend_path: str, body_path: str) -> str:
+    h = hashlib.sha1()
+    h.update(Path(legend_path).read_bytes())
+    h.update(Path(body_path).read_bytes())
+    return h.hexdigest()[:12]
+
+
+def _png_wh(path: str) -> tuple[int, int]:
+    """Read width, height from PNG file header (no extra deps)."""
+    with open(path, 'rb') as f:
+        f.read(16)  # PNG sig (8) + IHDR chunk length (4) + "IHDR" (4)
+        w = struct.unpack('>I', f.read(4))[0]
+        h = struct.unpack('>I', f.read(4))[0]
+    return w, h
+
+
+def _image_file_to_b64(image_path: str) -> str:
+    return base64.standard_b64encode(Path(image_path).read_bytes()).decode()
+
+
+def _analyse_legend_image(legend_b64: str, component_library: dict | None) -> list[dict]:
+    """
+    Send legend.png to Claude to identify all visual symbol variants.
+
+    Returns list of dicts: {visual_id, code, name, description, measurement_type}
+    visual_id is unique — if the same code label appears with two different graphics
+    (e.g. "A" with 1 leg vs 2 legs) they get separate entries: "A_v1", "A_v2".
+    """
+    lib_section = ""
+    if component_library:
+        lib_section = (
+            "\nKnown components from the project description:\n"
+            + json.dumps(component_library.get("components", []), ensure_ascii=False, indent=2)
+            + "\n"
+        )
+
+    prompt = f"""You are reading the FÖRKLARINGAR (legend) section of a Swedish building services drawing.
+{lib_section}
+List EVERY symbol shown in this legend.
+
+CRITICAL: If the same code label (e.g. "A") appears with TWO VISUALLY DIFFERENT graphic symbols
+(e.g. one with 2 legs and one with 1 leg), list them as SEPARATE entries with distinct visual_id
+values: "A_v1" and "A_v2". Describe what makes each visually distinct.
+
+For each symbol return:
+  visual_id        — unique identifier: use the code itself if it appears once (e.g. "KS"),
+                     or add "_v1", "_v2" suffix for multiple visual variants of the same code
+  code             — the text label exactly as printed (e.g. "A", "KS", "P11")
+  name             — full description from the legend text
+  description      — 1-2 sentences describing the graphic shape: number of legs/lines,
+                     circle/square/triangle, filled/outline, size relative to others, etc.
+  measurement_type — "count" for point-installed items (fixtures, sockets, sensors …)
+                     "length" for line-installed runs (trays, conduits, pipes …)
+
+YOUR RESPONSE MUST BE A RAW JSON OBJECT WITH NO TEXT BEFORE OR AFTER IT.
+No markdown fences, no explanation, no description of what you see. The very first character
+must be {{ and the last must be }}.
+
+{{
+  "symbols": [
+    {{"visual_id": "A_v1", "code": "A", "name": "Armatur 2-rör",
+      "description": "Circle with two downward lines (legs)", "measurement_type": "count"}},
+    {{"visual_id": "A_v2", "code": "A", "name": "Armatur 1-rör",
+      "description": "Circle with one downward line (leg)", "measurement_type": "count"}},
+    {{"visual_id": "KS", "code": "KS", "name": "Kabelstege",
+      "description": "Two parallel horizontal lines with cross-bars", "measurement_type": "length"}}
+  ]
+}}"""
+
+    resp = _client().messages.create(
+        model=SONNET,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": legend_b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    text = resp.content[0].text
+    try:
+        result = _extract_json(text)
+        return result.get("symbols", [])
+    except ValueError:
+        # Response was truncated mid-JSON — recover completed symbol objects
+        symbols = []
+        for m in re.finditer(r'\{[^{}]+\}', text, re.DOTALL):
+            try:
+                obj = json.loads(m.group())
+                if "visual_id" in obj and "code" in obj:
+                    symbols.append(obj)
+            except json.JSONDecodeError:
+                pass
+        if symbols:
+            print(f"  [AI] Legend JSON truncated — recovered {len(symbols)} symbol(s) from partial response")
+        return symbols
+
+
+def _count_variant_body(body_b64: str, visual_id: str, code: str, name: str,
+                        description: str, exclude_variants: list[dict]) -> int:
+    """Count one visual variant in the body image (legend already removed)."""
+    excl_block = ""
+    if exclude_variants:
+        lines = "\n".join(
+            f'  "{v["visual_id"]}" ({v["name"]}): {v.get("description", "")}  ← do NOT count this'
+            for v in exclude_variants
+        )
+        excl_block = (
+            f'\nIMPORTANT — these other variants share the "{code}" label but look different. '
+            f'Do NOT count them here:\n{lines}\n'
+            f'Count ONLY the variant described above.\n'
+        )
+
+    prompt = f"""You are counting electrical/building-services symbols in a building floor plan.
+The legend has been removed from this image — everything visible is the actual floor plan.
+
+Count how many instances of this specific symbol appear:
+  Code: "{code}"
+  Name: {name}
+  Visual appearance: {description}
+{excl_block}
+Rules:
+- Count every instance that matches the visual description above.
+- Do not double-count (each physical location = 1 instance).
+- If uncertain whether a mark matches → do NOT count it.
+
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT:
+{{"{visual_id}": <integer count>}}"""
+
+    resp = _client().messages.create(
+        model=SONNET,
+        max_tokens=256,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    text = resp.content[0].text
+    try:
+        result = _extract_json(text)
+        return int(result.get(visual_id, 0))
+    except (ValueError, KeyError):
+        # Claude returned prose — try to pull a number from patterns like "D1" label - that's 1 instance
+        m = re.search(r'\b(\d+)\s+instance', text) or re.search(r'total[^\d]*(\d+)', text, re.I)
+        if m:
+            return int(m.group(1))
+        return 0
+
+
+def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
+                        description: str) -> int | None:
+    """Qwen pass D — count one visual variant in the body image."""
+    client = _client_qwen()
+    if client is None:
+        return None
+
+    prompt = f"""You are counting symbols in a Swedish building services floor plan.
+The legend box has already been removed from this image — count only real installed items.
+
+Count instances of this specific symbol:
+  Code: "{code}"
+  Name: {name}
+  Visual appearance: {description}
+
+Reply ONLY with a JSON object, nothing else:
+{{"{visual_id}": <integer>}}"""
+
+    try:
+        payload = {
+            "model": QWEN_MODEL,
+            "max_tokens": 64,
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
+                {"type": "text", "text": prompt},
+            ]}],
+        }
+        http_resp = _CLIENT_QWEN.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {_QWEN_KEY}", "Content-Type": "application/json"},
+            json=payload,
+        )
+        body_text = http_resp.text.strip()
+        if http_resp.status_code != 200 or not body_text:
+            print(f"  [Qwen] HTTP {http_resp.status_code} for {visual_id}")
+            return None
+        data = http_resp.json()
+        if "error" in data:
+            print(f"  [Qwen] error for {visual_id}: {data['error']}")
+            return None
+        text = data["choices"][0]["message"]["content"] or ""
+        result = _extract_json(text)
+        return int(result.get(visual_id, 0))
+    except Exception as exc:
+        print(f"  [Qwen] failed for {visual_id}: {exc}")
+        return None
+
+
+def _estimate_lengths_from_body(body_b64: str, length_syms: list[dict]) -> dict[str, float]:
+    """Ask Claude to estimate total run lengths for line-installed items from the body image."""
+    if not length_syms:
+        return {}
+    syms_desc = "\n".join(
+        f'  "{s["visual_id"]}" ({s["code"]}): {s["name"]} — {s.get("description", "")}'
+        for s in length_syms
+    )
+    prompt = f"""You are estimating total run lengths of line-installed items in a building floor plan.
+The legend has been removed from this image.
+
+For each item below, estimate the TOTAL installed run length in metres.
+Use the drawing scale printed in the title block (e.g. "SKALA 1:50").
+
+Items to measure:
+{syms_desc}
+
+Return ONLY a JSON object mapping visual_id to total metres (float):
+{{{{"KS": 45.5, "KR": 12.0}}}}"""
+
+    resp = _client().messages.create(
+        model=SONNET,
+        max_tokens=512,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        result = _extract_json(resp.content[0].text)
+        return {k: float(v) for k, v in result.items() if isinstance(v, (int, float))}
+    except Exception:
+        return {}
+
+
+def load_images_cache(legend_path: str, body_path: str) -> dict | None:
+    key = _images_cache_key(legend_path, body_path)
+    p = AI_CACHE_DIR / f"images_{key}.json"
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return None
+
+
+def extract_with_images(legend_path: str, body_path: str,
+                        component_library: dict | None = None) -> dict:
+    """
+    Image-based extraction pipeline using pre-split legend and body PNGs.
+
+    Step 1 — legend.png → Claude identifies all visual symbol variants.
+              Two "A" symbols with different shapes become "A_v1" and "A_v2".
+    Step 2 — body.png → count each variant (3 Claude passes + optional Qwen).
+    Step 3 — body.png → estimate lengths for line-installed items.
+    """
+    cache_key  = _images_cache_key(legend_path, body_path)
+    cache_file = AI_CACHE_DIR / f"images_{cache_key}.json"
+    if cache_file.exists():
+        print(f"  [AI] loaded from image cache ({cache_key})")
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+
+    page_w, page_h = _png_wh(body_path)
+    legend_b64 = _image_file_to_b64(legend_path)
+    body_b64   = _image_file_to_b64(body_path)
+
+    # ── Step 1: legend analysis ──────────────────────────────────────────────
+    print("  [AI] Analysing legend image …")
+    try:
+        symbols = _analyse_legend_image(legend_b64, component_library)
+    except Exception as exc:
+        print(f"  [AI] Legend analysis failed: {exc}")
+        symbols = []
+    print(f"  [AI] {len(symbols)} symbol variant(s) found:")
+    for s in symbols:
+        print(f"    {s['visual_id']!r:16} code={s['code']!r}  [{s['measurement_type']}]  {s['name']}")
+
+    count_syms  = [s for s in symbols if s.get("measurement_type") == "count"]
+    length_syms = [s for s in symbols if s.get("measurement_type") != "count"]
+
+    # ── Step 2: count each visual variant ────────────────────────────────────
+    qwen_ok = _client_qwen() is not None
+    print(f"  [AI] Qwen pass D {'enabled' if qwen_ok else 'disabled'}")
+
+    counts: dict[str, dict] = {}
+    print(f"\n  Counting {len(count_syms)} symbol variant(s):")
+    for sym in count_syms:
+        vid  = sym["visual_id"]
+        code = sym["code"]
+        name = sym["name"]
+        desc = sym.get("description", name)
+        excl = [x for x in count_syms if x["visual_id"] != vid]
+
+        try:
+            a = _count_variant_body(body_b64, vid, code, name, desc, excl)
+        except Exception as e:
+            print(f"    {vid} pass A failed: {e}"); a = 0
+        try:
+            b = _count_variant_body(body_b64, vid, code, name, desc, excl)
+        except Exception as e:
+            print(f"    {vid} pass B failed: {e}"); b = 0
+        try:
+            c = _count_variant_body(body_b64, vid, code, name, desc, excl)
+        except Exception as e:
+            print(f"    {vid} pass C failed: {e}"); c = 0
+        d = _count_variant_qwen(body_b64, vid, code, name, desc) if qwen_ok else None
+
+        votes = [a, b, c] + ([d] if d is not None else [])
+        freq: dict[int, int] = {}
+        for v in votes:
+            freq[v] = freq.get(v, 0) + 1
+        best   = max(freq, key=lambda v: (freq[v], -v))
+        best_n = freq[best]
+        n      = len(votes)
+        conf   = "high" if best_n == n else ("medium" if best_n >= n - 1 else "low")
+
+        d_str = str(d) if d is not None else "—"
+        icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
+        print(f"    {vid:<18} A={a} B={b} C={c} D={d_str}  → {best} ({conf}) {icon}")
+        counts[vid] = {"a": a, "b": b, "c": c, "d": d, "final": best, "confidence": conf}
+
+    # ── Step 3: estimate lengths ─────────────────────────────────────────────
+    lengths: dict[str, float] = {}
+    if length_syms:
+        print(f"\n  Estimating lengths for {len(length_syms)} item(s) …")
+        try:
+            lengths = _estimate_lengths_from_body(body_b64, length_syms)
+            for vid, m in lengths.items():
+                print(f"    {vid}: {m:.1f} m")
+        except Exception as exc:
+            print(f"  [AI] Length estimation failed: {exc}")
+            lengths = {}
+
+    # ── Assemble standard schema ─────────────────────────────────────────────
+    components: list[dict] = []
+    summary:    list[dict] = []
+
+    for i, sym in enumerate(symbols):
+        vid   = sym["visual_id"]
+        code  = sym["code"]
+        name  = sym["name"]
+        mtype = sym.get("measurement_type", "count")
+        color = _color(vid)
+
+        if mtype == "count":
+            ct   = counts.get(vid, {})
+            qty  = ct.get("final", 0)
+            conf = ct.get("confidence", "unknown")
+            components.append({
+                "id": f"IMG_{vid}_{i}", "type": vid, "name": name,
+                "en_name": "", "color": color, "size": None,
+                "ok_height": None, "uk_height": None, "is_vertical": False,
+                "fire_rating": None, "label": f"{code} — {qty} pcs",
+                "bbox": None, "occurrences": 1,
+                "measurement_type": "count", "quantity": qty, "unit": "pcs",
+                "original_code": code,
+            })
+            summary.append({
+                "system": vid, "name": name, "orientation": "horizontal",
+                "width_mm": None, "ok_ofg_mm": None, "uk_ofg_mm": None,
+                "fire_rating": None, "measurement_type": "count", "unit": "pcs",
+                "count": qty, "count_method": "vision", "count_confidence": conf,
+                "count_grid_a": ct.get("a"), "count_grid_b": ct.get("b"),
+                "count_grid_c": ct.get("c"), "count_grid_d": ct.get("d"),
+                "count_text": None, "count_vision": None,
+                "original_code": code,
+            })
+        else:
+            qty = lengths.get(vid, 0.0)
+            components.append({
+                "id": f"IMG_{vid}_{i}", "type": vid, "name": name,
+                "en_name": "", "color": color, "size": None,
+                "ok_height": None, "uk_height": None, "is_vertical": False,
+                "fire_rating": None, "label": f"{code} — {qty:.1f} m",
+                "bbox": None, "occurrences": 1,
+                "measurement_type": "length", "quantity": qty, "unit": "m",
+                "original_code": code, "length_m": qty,
+            })
+            summary.append({
+                "system": vid, "name": name, "orientation": "horizontal",
+                "width_mm": None, "ok_ofg_mm": None, "uk_ofg_mm": None,
+                "fire_rating": None, "measurement_type": "length", "unit": "m",
+                "count": 1, "total_length_m": qty,
+                "original_code": code,
+            })
+
+    result = {
+        "page_width":      page_w,
+        "page_height":     page_h,
+        "drawing_type":    "image-based",
+        "scale":           "unknown",
+        "components":      components,
+        "summary":         summary,
+        "extraction_mode": "ai_images",
+    }
+    cache_file.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    return result
 
 
 def _normalise(raw: dict, page_w: float, page_h: float) -> dict:
