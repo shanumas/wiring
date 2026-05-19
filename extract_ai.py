@@ -1722,43 +1722,49 @@ def extract_with_images(legend_path: str, body_path: str,
             if d is not None:
                 print(f"    {vid}: {d}")
 
-    # ── Voting rule ───────────────────────────────────────────────────────────
-    # Priority (highest confidence first):
-    #   1. ≥3 of [A,B,C,D] agree       → that value  (high)
-    #   2. A == D                        → A           (high)
-    #   3. Any other pair agrees         → that value  (medium)
-    #   4. All four different            → A           (low)
+    # ── Voting rule (non-variant symbols) ────────────────────────────────────
+    #   1. ≥3 of [A,B,C,D] agree        → that value  (high)
+    #   2. A or C agrees with D          → D           (medium)
+    #   3. A == C                        → A           (medium)
+    #   4. All other cases               → D           (low)
     def _vote(a: int, b: int, c: int, d: int | None) -> tuple[int, str]:
         vals = [a, b, c] + ([d] if d is not None else [])
-        # Rule 1
         for v in set(vals):
             if vals.count(v) >= 3:
                 return v, "high"
-        # Rule 2
-        if d is not None and a == d:
-            return a, "high"
-        # Rule 3 — pairs other than (A,D)
-        pairs = [(a, b), (a, c), (b, c)] + ([(b, d), (c, d)] if d is not None else [])
-        for x, y in pairs:
-            if x == y:
-                return x, "medium"
-        # Rule 4
-        return a, "low"
+        if d is not None and (a == d or c == d):
+            return d, "medium"
+        if a == c:
+            return a, "medium"
+        if d is not None:
+            return d, "low"
+        return a, "low"   # D unavailable fallback
 
     print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
     for sym in count_syms:
-        vid = sym["visual_id"]
+        vid        = sym["visual_id"]
+        is_variant = vid != sym["code"]   # multiple visual variants share the same text label
         a   = tile_passes[0].get(vid, 0)
         b   = tile_passes[1].get(vid, 0)
         c   = tile_passes[2].get(vid, 0)
         d   = qwen_counts.get(vid) if qwen_ok else None
 
-        best, conf = _vote(a, b, c, d)
+        if is_variant:
+            # A/B/C count ALL occurrences of the shared text label — useless for variants.
+            # Only D looks at the actual symbol shape, so trust D exclusively.
+            best = d if d is not None else 0
+            conf = "high" if d is not None else "low"
+        else:
+            best, conf = _vote(a, b, c, d)
 
-        d_str = str(d) if d is not None else "—"
-        icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
-        print(f"    {vid:<18} A={a} B={b} C={c} D={d_str}  → {best} ({conf}) {icon}")
-        counts[vid] = {"a": a, "b": b, "c": c, "d": d, "final": best, "confidence": conf}
+        d_str  = str(d) if d is not None else "—"
+        marker = " [visual-only]" if is_variant else ""
+        icon   = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
+        print(f"    {vid:<18} A={a} B={b} C={c} D={d_str}  → {best} ({conf}) {icon}{marker}")
+        counts[vid] = {"a": a if not is_variant else None,
+                       "b": b if not is_variant else None,
+                       "c": c if not is_variant else None,
+                       "d": d, "final": best, "confidence": conf}
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}
