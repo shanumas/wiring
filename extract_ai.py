@@ -1374,6 +1374,63 @@ def _image_file_to_b64(image_path: str) -> str:
     return base64.standard_b64encode(Path(image_path).read_bytes()).decode()
 
 
+def _tile_png_b64(body_path: str, row: int, col: int,
+                  rows: int = 3, cols: int = 3,
+                  offset_x: float = 0.0, offset_y: float = 0.0,
+                  max_px: int = 2400) -> str:
+    """
+    Extract one tile from a PNG as base64, zoomed to max_px on the long side.
+    offset_x / offset_y shift the grid by a fraction of tile size (0.0–1.0)
+    so consecutive passes hit different cut lines and catch boundary symbols.
+    """
+    doc  = fitz.open(body_path)
+    page = doc[0]
+    w, h = page.rect.width, page.rect.height
+    tw, th = w / cols, h / rows
+    x0 = min((col + offset_x) * tw, w - tw)
+    y0 = min((row + offset_y) * th, h - th)
+    clip  = fitz.Rect(x0, y0, x0 + tw, y0 + th)
+    scale = min(max_px / max(clip.width, clip.height), 3.0)
+    pix   = page.get_pixmap(matrix=fitz.Matrix(scale, scale), clip=clip)
+    data  = base64.standard_b64encode(pix.tobytes("png")).decode()
+    doc.close()
+    return data
+
+
+def _count_all_variants_in_tile(tile_b64: str, symbols: list[dict]) -> dict[str, int]:
+    """
+    Count ALL visual variants in one tile with a single API call.
+    Only counts symbols fully visible (not cut off at tile edges).
+    Returns {visual_id: count}.
+    """
+    syms_desc = "\n".join(
+        f'  "{s["visual_id"]}" ({s["code"]}): {s["name"]} — {s.get("description", "")}'
+        for s in symbols
+    )
+    prompt = f"""Count building-services symbols in this floor plan tile.
+Only count symbols that are FULLY visible — do NOT count any symbol cut off at the image edge.
+
+Symbols to count:
+{syms_desc}
+
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
+The very first character must be {{ and the last must be }}.
+Example: {{"{symbols[0]['visual_id']}": 2}}"""
+
+    resp = _client().messages.create(
+        model=SONNET, max_tokens=256,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": tile_b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        result = _extract_json(resp.content[0].text)
+        return {s["visual_id"]: int(result.get(s["visual_id"], 0)) for s in symbols}
+    except Exception:
+        return {s["visual_id"]: 0 for s in symbols}
+
+
 def _analyse_legend_image(legend_b64: str, component_library: dict | None) -> list[dict]:
     """
     Send legend.png to Claude to identify all visual symbol variants.
@@ -1631,36 +1688,64 @@ def extract_with_images(legend_path: str, body_path: str,
     print(f"  [AI] Qwen pass D {'enabled' if qwen_ok else 'disabled'}")
 
     counts: dict[str, dict] = {}
-    print(f"\n  Counting {len(count_syms)} symbol variant(s):")
+
+    # ── Tiled passes A / B / C ────────────────────────────────────────────────
+    # Each pass tiles the body into a 3×3 grid (9 tiles, 9 API calls per pass).
+    # Passes use different grid offsets so boundary symbols missed in pass A
+    # become fully visible in pass B or C.
+    # Final count = MAX across passes (undercounting is the failure mode —
+    # the highest pass is the best lower bound on the true count).
+    ROWS, COLS = 3, 3
+    OFFSETS = [(0.0, 0.0), (0.5, 0.5), (0.25, 0.75)]   # A, B, C offsets
+
+    tile_pass_totals: list[dict[str, int]] = []
+    print(f"\n  Counting {len(count_syms)} symbol variant(s) via {ROWS}×{COLS} tiling "
+          f"({len(OFFSETS)} passes, offset grid):")
+    for pass_idx, (ox, oy) in enumerate(OFFSETS):
+        pass_label = ["A", "B", "C"][pass_idx]
+        pass_sum = {s["visual_id"]: 0 for s in count_syms}
+        for r in range(ROWS):
+            for c in range(COLS):
+                try:
+                    tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS, ox, oy)
+                    tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
+                    for vid, cnt in tile_cnt.items():
+                        pass_sum[vid] += cnt
+                except Exception as e:
+                    print(f"    Pass {pass_label} tile({r},{c}) failed: {e}")
+        tile_pass_totals.append(pass_sum)
+        print(f"    Pass {pass_label}: { {k: v for k, v in pass_sum.items() if v > 0} }")
+
+    # ── Qwen pass D (full image, per symbol) ─────────────────────────────────
+    qwen_counts: dict[str, int | None] = {}
+    if qwen_ok:
+        print(f"  Qwen pass D:")
+        for sym in count_syms:
+            vid = sym["visual_id"]
+            d   = _count_variant_qwen(body_b64, vid, sym["code"],
+                                      sym["name"], sym.get("description", sym["name"]))
+            qwen_counts[vid] = d
+            if d is not None:
+                print(f"    {vid}: {d}")
+
+    # ── Max-based aggregation per symbol ──────────────────────────────────────
+    # Undercounting is systematic: majority vote of undercounts = undercount.
+    # The highest result across independent passes is the best lower bound.
+    # Confidence: how consistent the passes are relative to the max.
+    print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
     for sym in count_syms:
-        vid  = sym["visual_id"]
-        code = sym["code"]
-        name = sym["name"]
-        desc = sym.get("description", name)
-        excl = [x for x in count_syms if x["visual_id"] != vid]
+        vid = sym["visual_id"]
+        a   = tile_pass_totals[0].get(vid, 0)
+        b   = tile_pass_totals[1].get(vid, 0)
+        c   = tile_pass_totals[2].get(vid, 0)
+        d   = qwen_counts.get(vid) if qwen_ok else None
 
-        try:
-            a = _count_variant_body(body_b64, vid, code, name, desc, excl)
-        except Exception as e:
-            print(f"    {vid} pass A failed: {e}"); a = 0
-        try:
-            b = _count_variant_body(body_b64, vid, code, name, desc, excl)
-        except Exception as e:
-            print(f"    {vid} pass B failed: {e}"); b = 0
-        try:
-            c = _count_variant_body(body_b64, vid, code, name, desc, excl)
-        except Exception as e:
-            print(f"    {vid} pass C failed: {e}"); c = 0
-        d = _count_variant_qwen(body_b64, vid, code, name, desc) if qwen_ok else None
+        claude_max = max(a, b, c)
+        best = max(claude_max, d) if d is not None else claude_max
 
-        votes = [a, b, c] + ([d] if d is not None else [])
-        freq: dict[int, int] = {}
-        for v in votes:
-            freq[v] = freq.get(v, 0) + 1
-        best   = max(freq, key=lambda v: (freq[v], -v))
-        best_n = freq[best]
-        n      = len(votes)
-        conf   = "high" if best_n == n else ("medium" if best_n >= n - 1 else "low")
+        all_vals = [a, b, c] + ([d] if d is not None else [])
+        spread = max(all_vals) - min(all_vals)
+        conf = "high" if spread <= 1 else ("medium" if spread <= max(2, best * 0.20) else "low")
 
         d_str = str(d) if d is not None else "—"
         icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
