@@ -236,6 +236,25 @@ def _estimate_ai(ai_comp: dict) -> dict:
     }
 
 
+def _process_images() -> dict:
+    """Cache entry for the image-based project — no PDF required."""
+    png     = BODY_IMG.read_bytes() if BODY_IMG.exists() else None
+    empty   = {"page_width": 0, "page_height": 0, "drawing_type": "image-based",
+                "components": [], "summary": []}
+    empty_e = {"items": [], "totals": {"total_cost_sek": 0, "total_length_m": 0}}
+    ai_comp = load_images_cache(str(LEGEND_IMG), str(BODY_IMG))
+    ai_est  = _estimate_ai(ai_comp) if ai_comp else None
+    return {
+        "png":               png,
+        "components":        empty,
+        "estimate":          empty_e,
+        "components_vector": empty,
+        "estimate_vector":   empty_e,
+        "components_ai":     ai_comp,
+        "estimate_ai":       ai_est,
+    }
+
+
 def _process(pdf_path: Path) -> dict:
     """Render PNG + run text/vector extract. Never calls Claude — zero tokens."""
     doc  = fitz.open(str(pdf_path))
@@ -297,11 +316,15 @@ if _component_library:
 else:
     print("No component library found — upload description.pdf to build one.")
 
-for _p in sorted(PDF_DIR.glob("*.pdf")):
-    if _p.name.lower() == "description.pdf":
-        continue   # skip — not a drawing
-    print(f"Loading {_p.name} …")
-    _cache[_p.name] = _process(_p)
+if LEGEND_IMG.exists() and BODY_IMG.exists():
+    print("Loading project from images/legend.png + images/body.png …")
+    _cache["project"] = _process_images()
+else:
+    for _p in sorted(PDF_DIR.glob("*.pdf")):
+        if _p.name.lower() == "description.pdf":
+            continue
+        print(f"Loading {_p.name} …")
+        _cache[_p.name] = _process(_p)
 print(f"Ready — {len(_cache)} drawing(s) loaded.")
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -387,20 +410,22 @@ def drawing_run_ai(name: str, force: bool = False):
     if name not in _cache:
         raise HTTPException(404, f"Drawing '{name}' not found")
     if force:
-        cache_file = _ai_cache_path(str(PDF_DIR / name))
-        if cache_file.exists():
-            cache_file.unlink()
-            print(f"  [AI] PDF cache cleared for {name}")
+        pdf_path = PDF_DIR / name
+        if pdf_path.exists():
+            cache_file = _ai_cache_path(str(pdf_path))
+            if cache_file.exists():
+                cache_file.unlink()
+                print(f"  [AI] PDF cache cleared for {name}")
         if LEGEND_IMG.exists() and BODY_IMG.exists():
             from extract_ai import AI_CACHE_DIR
-            img_key  = _images_cache_key(str(LEGEND_IMG), str(BODY_IMG))
+            img_key   = _images_cache_key(str(LEGEND_IMG), str(BODY_IMG))
             img_cache = AI_CACHE_DIR / f"images_{img_key}.json"
             if img_cache.exists():
                 img_cache.unlink()
                 print(f"  [AI] image cache cleared ({img_key})")
         _cache[name]["components_ai"] = None
         _cache[name]["estimate_ai"]   = None
-    _run_ai(PDF_DIR / name)
+    _run_ai(PDF_DIR / name if name != "project" else Path("project"))
     return {"status": "ok", "name": name}
 
 

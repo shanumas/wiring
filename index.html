@@ -1127,13 +1127,7 @@
       return;
     }
 
-    const drawnSummary  = summary.filter(s => typeof s.count === 'number')
-      .filter(s => {
-        // Hide zero-quantity items in AI mode
-        if (extractionMode !== 'ai') return true;
-        const qty = s.measurement_type === 'length' ? (s.total_length_m ?? 0) : (s.count ?? 0);
-        return qty > 0;
-      });
+    const drawnSummary  = summary.filter(s => typeof s.count === 'number');
     const legendSummary = summary.filter(s => typeof s.count !== 'number');
     const col = s => COLOR[s.system] || "#555555";
 
@@ -1147,9 +1141,11 @@
     // ── Drawn rows ────────────────────────────────────────────────────────
     drawnSummary.forEach(s => {
       const row = document.createElement('div');
+      const qty = s.measurement_type === 'length' ? (s.total_length_m ?? 0) : (s.count ?? 0);
       row.className = 'comp-row';
       row.dataset.vkey = variantKey(s);
       row.style.setProperty('--c', col(s));
+      if (extractionMode === 'ai' && qty === 0) row.style.opacity = '0.45';
 
       const sizeStr  = s.width_mm === 'per_drawing' ? 'per dwg'
                      : s.width_mm ? `${s.width_mm} mm` : '';
@@ -1439,12 +1435,8 @@
 
     const t     = data.totals;
     const isAI  = extractionMode === 'ai';
-    // For AI mode show all items (except zeros); otherwise only length items with count
     const items = isAI
-      ? data.items.filter(i => {
-          const qty = i.measurement_type === 'length' ? (i.total_length_m ?? 0) : (i.count ?? 0);
-          return qty > 0;
-        })
+      ? data.items
       : data.items.filter(i => typeof i.count === 'number');
 
     const table = document.createElement('table');

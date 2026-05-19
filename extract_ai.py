@@ -85,12 +85,9 @@ def _client_qwen():
 SONNET = "claude-sonnet-4-6"
 HAIKU  = "claude-haiku-4-5-20251001"
 
-# Qwen model via OpenRouter — change to any hosted Qwen VL you have access to.
-# Candidates (OpenRouter model IDs):
-#   qwen/qwen2.5-vl-72b-instruct   ← best quality, higher cost
-#   qwen/qwen2.5-vl-7b-instruct    ← cheaper, still strong
-#   qwen/qwen-vl-plus              ← Alibaba's managed endpoint
-QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen/qwen2.5-vl-72b-instruct")
+# Qwen model via OpenRouter. Override with $env:QWEN_MODEL if needed.
+# Candidates: qwen/qwen3-vl-32b-instruct (default, fast), qwen/qwen3-vl-8b-thinking (accurate, slow)
+QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen/qwen3-vl-32b-instruct")
 
 
 def _pdf_hash(pdf_path: str) -> str:
