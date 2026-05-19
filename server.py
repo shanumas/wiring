@@ -10,11 +10,14 @@ GET  /drawing/{name}/image        → rendered PNG (1.5×)
 GET  /drawing/{name}/components   → extract() result as JSON
 GET  /drawing/{name}/estimate     → estimate() result as JSON
 """
+import asyncio
+import json
 import os
 import sys
+import threading
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, Response, JSONResponse
+from fastapi.responses import HTMLResponse, Response, JSONResponse, StreamingResponse
 import fitz
 from extract import extract, _to_display_bbox
 from extract_vector import extract_vectors
@@ -314,7 +317,14 @@ _component_library = load_component_library()
 if _component_library:
     print(f"Component library loaded ({len(_component_library.get('components', []))} components).")
 else:
-    print("No component library found — upload description.pdf to build one.")
+    # Auto-build from images/description.pdf if present
+    _desc_img = Path("images/description.pdf")
+    if _desc_img.exists():
+        print("Building component library from images/description.pdf …")
+        _component_library = build_component_library(str(_desc_img))
+        print(f"  → {len(_component_library.get('components', []))} components extracted.")
+    else:
+        print("No component library found — upload description.pdf to build one.")
 
 if LEGEND_IMG.exists() and BODY_IMG.exists():
     print("Loading project from images/legend.png + images/body.png …")
@@ -427,6 +437,68 @@ def drawing_run_ai(name: str, force: bool = False):
         _cache[name]["estimate_ai"]   = None
     _run_ai(PDF_DIR / name if name != "project" else Path("project"))
     return {"status": "ok", "name": name}
+
+
+@app.post("/drawing/{name}/run-ai-stream")
+async def drawing_run_ai_stream(name: str, force: bool = False):
+    """SSE endpoint — streams phase/symbol events as AI extraction progresses."""
+    if name not in _cache:
+        raise HTTPException(404, f"Drawing '{name}' not found")
+
+    if force:
+        pdf_path = PDF_DIR / name
+        if pdf_path.exists():
+            cache_file = _ai_cache_path(str(pdf_path))
+            if cache_file.exists():
+                cache_file.unlink()
+        if LEGEND_IMG.exists() and BODY_IMG.exists():
+            from extract_ai import AI_CACHE_DIR
+            img_key   = _images_cache_key(str(LEGEND_IMG), str(BODY_IMG))
+            img_cache = AI_CACHE_DIR / f"images_{img_key}.json"
+            if img_cache.exists():
+                img_cache.unlink()
+        _cache[name]["components_ai"] = None
+        _cache[name]["estimate_ai"]   = None
+
+    loop     = asyncio.get_running_loop()
+    event_q: asyncio.Queue = asyncio.Queue()
+
+    def _cb(event):
+        loop.call_soon_threadsafe(event_q.put_nowait, event)
+
+    def _run():
+        _ai_running.add(name)
+        try:
+            if LEGEND_IMG.exists() and BODY_IMG.exists():
+                ai_comp = extract_with_images(
+                    str(LEGEND_IMG), str(BODY_IMG), _component_library, progress_cb=_cb)
+            else:
+                ai_comp = extract_with_ai(str(PDF_DIR / name), _component_library)
+            ai_est = _estimate_ai(ai_comp)
+            _cache[name]["components_ai"] = ai_comp
+            _cache[name]["estimate_ai"]   = ai_est
+            loop.call_soon_threadsafe(event_q.put_nowait, {"type": "done"})
+        except Exception as exc:
+            loop.call_soon_threadsafe(event_q.put_nowait,
+                                      {"type": "error", "message": str(exc)})
+        finally:
+            _ai_running.discard(name)
+            loop.call_soon_threadsafe(event_q.put_nowait, None)  # sentinel
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    async def _generate():
+        while True:
+            event = await event_q.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/drawing/{name}/components-ai")

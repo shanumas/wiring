@@ -1,0 +1,277 @@
+{
+  "components": [
+    {
+      "code": "T1a",
+      "name": "Takarmatur dikt tak – Fagerhult Allfive LED / Ceiling fixture flush mount – Fagerhult Allfive LED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 29W, 4636lm, 3000K, IP44, L1145×B150×H50mm, Prisma bländskydd, Snabbkopplingsplint 5x2,5mm², styrning e-Sense detect + dalidon, kabelstege/armaturskena, Art.nr 33301-20074"
+    },
+    {
+      "code": "T1b",
+      "name": "Takarmatur dikt tak – Fagerhult Allfive LED / Ceiling fixture flush mount – Fagerhult Allfive LED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 30W, 4636lm, 3000K, IP44, L1145×B150×H50mm, Prisma bländskydd, Snabbkopplingsplint 5x2,5mm², styrning På/av + dalidon, kabelstege/armaturskena, Art.nr 33301-20150"
+    },
+    {
+      "code": "T2",
+      "name": "Takarmatur dikt tak – Cardi Ringo relä / Ceiling fixture flush mount – Cardi Ringo relay",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 18,5W, 1425lm, 3000K, IP65, L330×B330×H101mm, Opal bländskydd, Insticksplint 3x2,5mm², styrning På/av sensor, levereras med relä för styrning av magnet-ventil, E77 100 05"
+    },
+    {
+      "code": "V3",
+      "name": "Väggarmatur ovan spegel – Befintlig armatur RWC / Wall fixture above mirror – Existing fixture RWC",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED, Opal bländskydd, Plafond typ, se teknisk beskrivning"
+    },
+    {
+      "code": "T4",
+      "name": "Takarmatur dikt tak – Glamox C90-S570 / Ceiling fixture flush mount – Glamox C90-S570",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 39W, 4604lm, 3000K, IP20, Ø570×H100mm, Opal bländskydd, Insticksplint 5x2x2,5mm², styrning Dalidon, Art.nr C90230954"
+    },
+    {
+      "code": "V4",
+      "name": "Väggarmatur dikt vägg – Glamox C90-S570 / Wall fixture flush mount – Glamox C90-S570",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 39W, 4604lm, 3000K, IP20, Ø570×H100mm, Opal bländskydd, Insticksplint 5x2x2,5mm², styrning Dalidon, Art.nr C90230954"
+    },
+    {
+      "code": "V5",
+      "name": "Väggarmatur dikt vägg över spegel – Glamox A40 / Wall fixture flush mount above mirror – Glamox A40",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 16W, 2190lm, 3000K, IP44, L1200mm, Opal bländskydd, Insticksplint 3x2,5mm², styrning På/av, Art.nr A40832262"
+    },
+    {
+      "code": "U6",
+      "name": "Underskåpsarmatur dikt undersida överskåp – Fagerhult Zest LED / Under-cabinet fixture – Fagerhult Zest LED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 9W, 1155lm, 3000K, IP21, L599×B107×H33mm, Opal bländskydd, Snabbkopplingsplint 5x1,5mm², styrning Dalidon, Art.nr 18229"
+    },
+    {
+      "code": "U7",
+      "name": "Underskåpsarmatur dikt undersida överskåp – Fagerhult Zest LED / Under-cabinet fixture – Fagerhult Zest LED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 15W, 2075lm, 3000K, IP21, L1181×B107×H33mm, Opal bländskydd, Snabbkopplingsplint 5x1,5mm², styrning Dalidon, Art.nr 18235"
+    },
+    {
+      "code": "I8",
+      "name": "Infälld armatur – Fagerhult Pleiad G4 205 / Recessed downlight – Fagerhult Pleiad G4 205",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 21W, 2657lm, 3000K, IP64/20, L223×B223×H107mm, Matt reflektor lins av klar akryl, Wago Winsta 5-pol hane, styrning Dalidon, Montageskiva 41956, Art.nr 73338-529"
+    },
+    {
+      "code": "I9",
+      "name": "Infälld armatur – Befintlig korridorer/trapphus Typ Solar LEDUSED / Recessed fixture – Existing corridors/stairwells Solar LEDUSED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED, IP se teknisk beskrivning, L595×B595×H15mm, Opal bländskydd, Typ Wago Winsta 5-pol hane, styrning se teknisk beskrivning"
+    },
+    {
+      "code": "I10",
+      "name": "Infälld armatur – Glamox C35-R600x600 / Recessed panel fixture – Glamox C35-R600x600",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 23W, 2941lm, 3000K, IP40 underifrån/IP20 från ovan, L594×B594×H16mm, Opal bländskydd, Typ Wago Winsta 5-pol hane, styrning Dalidon, Art.nr C35228921"
+    },
+    {
+      "code": "P11",
+      "name": "Pendlad armatur – Glamox C77-P125x1200 / Pendant fixture – Glamox C77-P125x1200",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 47W, 5540lm, 3000K, IP20, L1179×B125×H32mm, SM Silver matt reflektor, Typ Wago Winsta 5-pol hane, styrning Dalidon (2st), Wire för pendelmontage, Art.nr C77101310"
+    },
+    {
+      "code": "P12",
+      "name": "Pendlad armatur rampmontage – Glamox C21-S1500 / Pendant fixture ramp mount – Glamox C21-S1500",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 40W, 4633lm, 3000K, IP20, L1484×B90×H33mm, Assymetriska linser svart antireflex reflektor, Typ Wago Winsta 5-pol hane, styrning Dalidon, Wire för pendelmontage + rampmonteringssats, Art.nr C21545463"
+    },
+    {
+      "code": "P13",
+      "name": "Pendlad armatur rampmontage – Ateljé Lyktan Time Pendel / Pendant fixture ramp mount – Ateljé Lyktan Time Pendel",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 72W, 8500lm, 3000K, IP20, L1700×B69×H85mm, Opal bländskydd, 3m hf kabel med typ Wagokontakt, styrning Dalidon 2st + dragdim för nedljus, Wire + rampmonteringssats, Art.nr M0003E3C4711"
+    },
+    {
+      "code": "P14",
+      "name": "Pendlad armatur – Fagerhult Scoot / Pendant fixture – Fagerhult Scoot",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 25W, 3112lm, 3000K, IP20, L450×B450×H275mm, Opal bländskydd, Typ Wago Winsta 5-pol hane, styrning Dalidon, vit, Art.nr 54941-402"
+    },
+    {
+      "code": "P15",
+      "name": "Pendlad armatur – Glamox C88-P1500 / Pendant fixture – Glamox C88-P1500",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 57,6W, 7754lm, 3000K, IP40, L1547×B96×H46mm, Mikroprisma bländskydd, Typ Wago Winsta 5-pol hane, styrning Dalidon, Art.nr C88550572"
+    },
+    {
+      "code": "P16",
+      "name": "Pendlad armatur – Flux Trace pendant / Pendant fixture – Flux Trace pendant",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 32W, 2352lm, 3000K, IP67, L1714×B45×H45mm, Opal bländskydd, Typ Wago Winsta 5-pol hane, styrning Dalidon, Wire, Art.nr 53-70-4306-55708"
+    },
+    {
+      "code": "V17",
+      "name": "Väggarmatur – Hide a Lite Pave wall deco IV / Wall fixture – Hide a Lite Pave wall deco IV",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 3,5-18W, 200-1400lm, 3000K, IP65 IK10, Antracit, styrning På/av via tidkanal, Art.nr 7706031"
+    },
+    {
+      "code": "V18",
+      "name": "Väggarmatur överkant dörrkarm – Hide a Lite Kloss / Wall fixture top of door frame – Hide a Lite Kloss",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 6,5W, 600lm, 3000K, IP20, L140×B55×H58mm, Opal bländskydd, Snabbkopplingsplint 3x1,5mm², styrning På/av, E75 100 50"
+    },
+    {
+      "code": "T19",
+      "name": "Takarmatur dikt tak – Fagerhult Allfive LED / Ceiling fixture flush mount – Fagerhult Allfive LED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 30W, 4636lm, 3000K, IP44, L1145×B150×H50mm, Prisma bländskydd, Snabbkopplingsplint 5x2,5mm², styrning På/av + dalidon, Skyddsrumsbygel Art.nr 90491, Art.nr 33301-20150"
+    },
+    {
+      "code": "P20",
+      "name": "Pendlad globarmatur – Befintlig armatur trapphus B1 / Pendant globe fixture – Existing fixture stairwell B1",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "Pendlad globarmatur, anslutning Direkt, restaureras se teknisk beskrivning"
+    },
+    {
+      "code": "T21",
+      "name": "Takarmatur i tak – Glamox I60-600 LED / Ceiling fixture in ceiling – Glamox I60-600 LED",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 16W, 1869lm, 3000K, IP44, L662×B165×H57mm, anslutning Direkt, styrning Dalidon, Skyddsrumsbygel Art.nr I60000008, Art.nr I60087191"
+    },
+    {
+      "code": "P22",
+      "name": "Pendlad armatur – Glamox C77-P125x1200 / Pendant fixture – Glamox C77-P125x1200",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 55W, 6577lm, 3000K, IP20, L1179×B125×H32mm, SM Silver matt reflektor, 3x2x2,5mm² Instick, styrning På/av HF-don, Wire för pendelmontage, Art.nr C77099569"
+    },
+    {
+      "code": "T23",
+      "name": "Takarmatur befintlig – LED Nedljus / Existing ceiling fixture – LED Downlight",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "Befintlig armatur, LED nedljus, tak kabelstege/armaturskena, anslutning Direkt, styrning se teknisk beskrivning, nya tätningshylsor innan montage"
+    },
+    {
+      "code": "P24",
+      "name": "Pendlad armatur – Glamox C80-P1150 / Pendant fixture – Glamox C80-P1150",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 54W, 7000lm, 3000K, IP20 50/50 ljusfördelning upp/ner, L1150×B65×H85mm, MP Mikroprisma bländskydd, Typ Wago Winsta 5-pol hane, styrning På/av med dragsnöre + inbyggd sensor, Wire för pendelmontage, Art.nr C80568456"
+    },
+    {
+      "code": "P25",
+      "name": "Pendlad globarmatur – Befintlig armatur trapphus E1 / Pendant globe fixture – Existing fixture stairwell E1",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "Pendlad globarmatur, anslutning Direkt, styrning/övrigt se teknisk beskrivning"
+    },
+    {
+      "code": "P26",
+      "name": "Pendlad träkrona – Befintlig armatur personalrum och konferens / Pendant wood crown chandelier – Existing fixture staff room and conference",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "Pendlad träkrona, anslutning Direkt, styrning/övrigt se teknisk beskrivning"
+    },
+    {
+      "code": "V27",
+      "name": "Väggarmatur i kulvert hus B – Befintlig LED Plafond / Wall fixture in culvert building B – Existing LED Plafonnier",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED Plafond, Opal bländskydd, montage Vägg enligt teknisk beskrivning, anslutning Direkt, styrning intern detektor På/av, mått se teknisk beskrivning"
+    },
+    {
+      "code": "N1",
+      "name": "Nödljusarmatur/hänvisningsarmatur – Malux Guideled cg-s / Emergency exit sign – Malux Guideled cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 2,6W vid läsavstånd 30m, IP40, Polykarbonat PMMA, 2x2,5mm², Centralmatad övervakad, Tak pendlas höjd med dörrfoder, Piktogram ner Art.nr 771519, Piktogram HCP pil ner Art.nr 772207, Art.nr 7053640"
+    },
+    {
+      "code": "N1R",
+      "name": "Nödljusarmatur/hänvisningsarmatur med rullstolspiktogram – Malux Guideled cg-s / Emergency exit sign with wheelchair pictogram – Malux Guideled cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 2,6W vid läsavstånd 30m, IP40, Polykarbonat PMMA, 2x2,5mm², Centralmatad övervakad, Tak pendlas höjd med dörrfoder, Piktogram ner Art.nr 771519, Piktogram HCP pil ner Art.nr 772207, Art.nr 7053640"
+    },
+    {
+      "code": "N2",
+      "name": "Nödljusarmatur/hänvisningsarmatur – Vakant / Emergency luminaire – Vacant",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "Vakant position, inga specifikationer"
+    },
+    {
+      "code": "N3",
+      "name": "Nödljusarmatur/hänvisningsarmatur – Malux Guideled cg-s pil vänster / Emergency exit sign arrow left – Malux Guideled cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 2,6W vid läsavstånd 30m, IP40, Polykarbonat PMMA, 2x2,5mm², Centralmatad övervakad, Tak pendlas höjd med dörrfoder, Piktogram pil vänster Art.nr 7053500, Piktogram HCP pil vänster HCP höger Art.nr 772209, Art.nr 7053640"
+    },
+    {
+      "code": "N3R",
+      "name": "Nödljusarmatur/hänvisningsarmatur med rullstolspiktogram pil vänster – Malux Guideled cg-s / Emergency exit sign wheelchair arrow left – Malux Guideled cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 2,6W vid läsavstånd 30m, IP40, Polykarbonat PMMA, 2x2,5mm², Centralmatad övervakad, Tak pendlas höjd med dörrfoder, Piktogram pil vänster Art.nr 7053500, Piktogram HCP pil vänster HCP höger Art.nr 772209, Art.nr 7053640"
+    },
+    {
+      "code": "N4",
+      "name": "Nödljusarmatur tak utanpåliggande – Malux Guideled sl cg-s / Surface-mounted emergency downlight ceiling – Malux Guideled sl cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 2W, Asymmetrisk/symmetrisk, IP41, L124×B124×H32mm, Dubbeloptik, 2x3x2,5mm², Centralmatad övervakad, 13011.2"
+    },
+    {
+      "code": "N5",
+      "name": "Nödljusarmatur tak infälld – Malux Guideled sl cg-s / Recessed emergency downlight ceiling – Malux Guideled sl cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 2W, Asymmetrisk/symmetrisk, IP41, L80×B80×H39mm, Dubbeloptik, 2x3x2,5mm², Centralmatad övervakad"
+    },
+    {
+      "code": "N6",
+      "name": "Nödljusarmatur vägg ovan dörr – Malux Flat-LED20/1 cg-s / Emergency wall fixture above door – Malux Flat-LED20/1 cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 3W, IP65, L205×B43×H15mm, 2x2,5mm², Centralmatad övervakad, Batteribox monteras på insida fasad"
+    },
+    {
+      "code": "N7",
+      "name": "Nödljusarmatur tak infälld – Malux Guideled sl cg-s / Recessed emergency downlight ceiling – Malux Guideled sl cg-s",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 3,9W, IP41, L80×B80×H39mm, Dubbeloptik, 2x3x2,5mm², Centralmatad övervakad, Art.nr 784988, 13021.2"
+    },
+    {
+      "code": "N8",
+      "name": "Nödljusarmatur tak/vägg – Malux LED CG-S / Emergency luminaire ceiling/wall – Malux LED CG-S",
+      "measurement_type": "count",
+      "unit": "pcs",
+      "notes": "LED 10,3W, IP65, L80×B80×H39mm, 2x3x2,5mm², Centralmatad övervakad, piktogram Art.nr 776158, Art.nr 776155"
+    }
+  ]
+}

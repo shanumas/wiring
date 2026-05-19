@@ -396,10 +396,26 @@ Return ONLY valid JSON, no other text:
 
     resp = _client().messages.create(
         model=SONNET,
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": content}],
     )
-    library = _extract_json(resp.content[0].text)
+    text = resp.content[0].text
+    try:
+        library = _extract_json(text)
+    except ValueError:
+        # Response truncated mid-JSON — recover completed component objects
+        components = []
+        for m in re.finditer(r'\{[^{}]+\}', text, re.DOTALL):
+            try:
+                obj = json.loads(m.group())
+                if "code" in obj and "measurement_type" in obj:
+                    components.append(obj)
+            except json.JSONDecodeError:
+                pass
+        if not components:
+            raise
+        print(f"  [AI] Component library JSON truncated — recovered {len(components)} component(s)")
+        library = {"components": components}
 
     # Cache to disk
     LIBRARY_CACHE_PATH.write_text(
@@ -1650,7 +1666,8 @@ def load_images_cache(legend_path: str, body_path: str) -> dict | None:
 
 
 def extract_with_images(legend_path: str, body_path: str,
-                        component_library: dict | None = None) -> dict:
+                        component_library: dict | None = None,
+                        progress_cb=None) -> dict:
     """
     Image-based extraction pipeline using pre-split legend and body PNGs.
 
@@ -1659,6 +1676,13 @@ def extract_with_images(legend_path: str, body_path: str,
     Step 2 — body.png → count each variant (3 Claude passes + optional Qwen).
     Step 3 — body.png → estimate lengths for line-installed items.
     """
+    def _emit(event):
+        if progress_cb:
+            try:
+                progress_cb(event)
+            except Exception:
+                pass
+
     cache_key  = _images_cache_key(legend_path, body_path)
     cache_file = AI_CACHE_DIR / f"images_{cache_key}.json"
     if cache_file.exists():
@@ -1670,6 +1694,7 @@ def extract_with_images(legend_path: str, body_path: str,
     body_b64   = _image_file_to_b64(body_path)
 
     # ── Step 1: legend analysis ──────────────────────────────────────────────
+    _emit({"type": "phase", "phase": "legend", "msg": "Analysing legend…"})
     print("  [AI] Analysing legend image …")
     try:
         symbols = _analyse_legend_image(legend_b64, component_library)
@@ -1696,6 +1721,8 @@ def extract_with_images(legend_path: str, body_path: str,
     ROWS, COLS = 3, 3
     tile_passes: list[dict[str, int]] = []
     for pass_label in ["A", "B", "C"]:
+        _emit({"type": "phase", "phase": f"pass_{pass_label}",
+               "msg": f"Tiling pass {pass_label} ({ROWS}×{COLS})…"})
         pass_sum = {s["visual_id"]: 0 for s in count_syms}
         print(f"\n  Pass {pass_label} — {ROWS}×{COLS} tiled:")
         for r in range(ROWS):
@@ -1710,19 +1737,7 @@ def extract_with_images(legend_path: str, body_path: str,
         tile_passes.append(pass_sum)
         print(f"    { {k: v for k, v in pass_sum.items() if v > 0} }")
 
-    # ── Pass D: Qwen full-image count ─────────────────────────────────────────
-    qwen_counts: dict[str, int | None] = {}
-    if qwen_ok:
-        print(f"\n  Pass D — Qwen full-image:")
-        for sym in count_syms:
-            vid = sym["visual_id"]
-            d   = _count_variant_qwen(body_b64, vid, sym["code"],
-                                      sym["name"], sym.get("description", sym["name"]))
-            qwen_counts[vid] = d
-            if d is not None:
-                print(f"    {vid}: {d}")
-
-    # ── Voting rule (non-variant symbols) ────────────────────────────────────
+    # ── Voting rule ──────────────────────────────────────────────────────────
     #   1. ≥3 of [A,B,C,D] agree        → that value  (high)
     #   2. A or C agrees with D          → D           (high)
     #   3. A == C                        → A           (medium)
@@ -1746,18 +1761,32 @@ def extract_with_images(legend_path: str, body_path: str,
     from collections import Counter as _Counter
     _code_freq = _Counter(s["code"] for s in count_syms)
 
+    # ── Pass D: Qwen full-image count + per-symbol vote (streamed) ───────────
+    if qwen_ok:
+        _emit({"type": "phase", "phase": "qwen",
+               "msg": f"Qwen counting {len(count_syms)} symbol(s)…"})
+        print(f"\n  Pass D — Qwen full-image:")
+    else:
+        _emit({"type": "phase", "phase": "voting", "msg": "Voting…"})
+
     print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
     for sym in count_syms:
         vid        = sym["visual_id"]
-        is_variant = _code_freq[sym["code"]] > 1   # true only when code is shared
-        a   = tile_passes[0].get(vid, 0)
-        b   = tile_passes[1].get(vid, 0)
-        c   = tile_passes[2].get(vid, 0)
-        d   = qwen_counts.get(vid) if qwen_ok else None
+        is_variant = _code_freq[sym["code"]] > 1
+
+        a = tile_passes[0].get(vid, 0)
+        b = tile_passes[1].get(vid, 0)
+        c = tile_passes[2].get(vid, 0)
+
+        if qwen_ok:
+            d = _count_variant_qwen(body_b64, vid, sym["code"],
+                                    sym["name"], sym.get("description", sym["name"]))
+            if d is not None:
+                print(f"    {vid}: {d}")
+        else:
+            d = None
 
         if is_variant:
-            # A/B/C count ALL occurrences of the shared text label — useless for variants.
-            # Only D looks at the actual symbol shape, so trust D exclusively.
             best = d if d is not None else 0
             conf = "high" if d is not None else "low"
         else:
@@ -1771,10 +1800,24 @@ def extract_with_images(legend_path: str, body_path: str,
                        "b": b if not is_variant else None,
                        "c": c if not is_variant else None,
                        "d": d, "final": best, "confidence": conf}
+        _emit({
+            "type":       "symbol",
+            "visual_id":  vid,
+            "code":       sym["code"],
+            "name":       sym.get("name", sym["code"]),
+            "count":      best,
+            "confidence": conf,
+            "a":          a if not is_variant else None,
+            "b":          b if not is_variant else None,
+            "c":          c if not is_variant else None,
+            "d":          d,
+        })
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}
     if length_syms:
+        _emit({"type": "phase", "phase": "lengths",
+               "msg": f"Estimating lengths for {len(length_syms)} item(s)…"})
         print(f"\n  Estimating lengths for {len(length_syms)} item(s) …")
         try:
             lengths = _estimate_lengths_from_body(body_b64, length_syms)

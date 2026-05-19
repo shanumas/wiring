@@ -180,6 +180,56 @@
     }
     #comp-list { }
 
+    /* ── hide-zeros bar ── */
+    #hide-zeros-bar {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      background: #f4f6fa;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 10px;
+      color: #555;
+    }
+    #hide-zeros-bar label { display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none; }
+
+    /* ── streaming phase bar ── */
+    #stream-phase-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: #f0f4fa;
+      border-bottom: 1px solid #d8e0ee;
+      font-size: 10px;
+      font-weight: 600;
+      color: #3a5080;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .stream-spinner {
+      flex: 0 0 10px; height: 10px;
+      border: 1.5px solid #b0bdd8;
+      border-top-color: #3a5080;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    /* ── row entrance + qty flash ── */
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .comp-row.arriving { animation: rowIn 0.22s ease forwards; }
+
+    @keyframes qtyFlash {
+      0%   { background: rgba(28,43,74,0.13); border-radius: 3px; }
+      100% { background: transparent; }
+    }
+    .qty-flash { animation: qtyFlash 0.75s ease forwards; }
+
     /* ── components table ── */
     .tbl-head {
       display: grid;
@@ -655,6 +705,12 @@
       <button id="recompute-btn" title="Recompute AI extraction (uses tokens)">↻ Recompute</button>
     </div>
     <div id="comp-panel" class="sidebar-panel active">
+      <div id="hide-zeros-bar">
+        <label>
+          <input type="checkbox" id="hide-zeros-chk" checked>
+          Hide zero-count items
+        </label>
+      </div>
       <div id="comp-list"></div>
     </div>
     <div id="est-panel" class="sidebar-panel">
@@ -673,6 +729,19 @@
   let currentDrawing = null;
   let currentDrawingType = 'unknown';
   let extractionMode = 'ai';   // 'text' | 'vector' | 'ai'
+  let hideZeros = true;
+
+  function applyHideZeros() {
+    document.querySelectorAll('#comp-list .comp-row[data-count]').forEach(row => {
+      const cnt = parseFloat(row.dataset.count ?? '1');
+      if (hideZeros && cnt === 0) {
+        row.style.display = 'none';
+      } else {
+        row.style.display = '';
+        row.style.opacity = cnt === 0 ? '0.45' : '';
+      }
+    });
+  }
 
   // ── drawing list + selector ────────────────────────────────────────────────
   async function loadDrawingList() {
@@ -763,25 +832,9 @@
       extractionMode === 'ai' ? 'block' : 'none';
   }
 
-  document.getElementById('recompute-btn').addEventListener('click', async () => {
+  document.getElementById('recompute-btn').addEventListener('click', () => {
     if (!currentDrawing) return;
-    const btn = document.getElementById('recompute-btn');
-    btn.textContent = '↻ Running…';
-    btn.disabled = true;
-    try {
-      const res = await fetch(
-        `/drawing/${encodeURIComponent(currentDrawing)}/run-ai?force=true`,
-        { method: 'POST' }
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const prev = currentDrawing;
-      currentDrawing = null;   // force reload
-      await switchDrawing(prev);
-    } catch (err) {
-      btn.textContent = '✗ Failed';
-      btn.disabled = false;
-      setTimeout(() => { btn.textContent = '↻ Recompute'; btn.disabled = false; }, 3000);
-    }
+    startAIStream(currentDrawing, true);
   });
 
   function showRunAIPrompt(name) {
@@ -801,41 +854,148 @@
           ▶ Run AI Extraction
         </button>
       </div>`;
-    document.getElementById('run-ai-btn').addEventListener('click', async () => {
-      const btn = document.getElementById('run-ai-btn');
-      btn.textContent = 'Running…';
-      btn.disabled = true;
-      try {
-        const res = await fetch(`/drawing/${encodeURIComponent(name)}/run-ai`, { method: 'POST' });
-        if (!res.ok) throw new Error(await res.text());
-        // Reload the drawing in AI mode now that the result exists
-        currentDrawing = null;
-        await switchDrawing(name);
-      } catch (err) {
-        btn.textContent = '✗ Failed — check terminal';
-        btn.disabled = false;
-      }
+    document.getElementById('run-ai-btn').addEventListener('click', () => {
+      startAIStream(name, false);
     });
     document.getElementById('est-list').innerHTML = '';
   }
 
   function showRunAIProgress(name) {
+    // In-progress means streaming started in another tab; poll until done
     const list = document.getElementById('comp-list');
     list.innerHTML = `
-      <div style="padding:32px 16px;text-align:center">
-        <div style="font-size:13px;font-weight:600;color:#1a5c8a;margin-bottom:8px">
-          AI extraction in progress…
-        </div>
-        <div style="font-size:11px;color:#888;line-height:1.6">
-          Claude is analysing the drawing.<br>This page will refresh automatically.
-        </div>
+      <div id="stream-phase-bar">
+        <span class="stream-spinner"></span>
+        <span id="stream-phase-text">AI extraction in progress…</span>
       </div>`;
     document.getElementById('est-list').innerHTML = '';
-    // Poll every 5 seconds until result is ready
     setTimeout(async () => {
       currentDrawing = null;
       await switchDrawing(name);
     }, 5000);
+  }
+
+  // ── streaming AI extraction ────────────────────────────────────────────────
+  function initStreamUI() {
+    const list = document.getElementById('comp-list');
+    list.innerHTML = `
+      <div id="stream-phase-bar">
+        <span class="stream-spinner"></span>
+        <span id="stream-phase-text">Starting…</span>
+      </div>
+      <div class="tbl-head">
+        <span>Code</span><span>Description</span><span class="num">Qty</span>
+      </div>
+      <div id="stream-rows"></div>`;
+    document.getElementById('est-list').innerHTML = '';
+  }
+
+  function addStreamRow(sym) {
+    const rowsDiv = document.getElementById('stream-rows');
+    if (!rowsDiv) return;
+    const rowId = `srow-${sym.visual_id.replace(/[^a-z0-9_]/gi, '_')}`;
+    let row = document.getElementById(rowId);
+
+    const count     = sym.count ?? 0;
+    const conf      = sym.confidence || 'unknown';
+    const isHigh    = conf === 'high', isMed = conf === 'medium';
+    const icon      = isHigh ? '✓' : isMed ? '⚠' : '✗';
+    const confColor = isHigh ? '#2a7a3a' : isMed ? '#8a6200' : '#9c2c2c';
+
+    const dPart = sym.d != null
+      ? ` <span style="color:#5a3a7a">D:${sym.d}</span>`
+      : ` <span style="color:#aaa">D:—</span>`;
+    const abcPart = sym.a != null
+      ? `${icon} A:${sym.a} B:${sym.b} C:${sym.c}${dPart}`
+      : `${icon} <span style="color:#888;font-style:italic">visual-only</span>${dPart}`;
+    const validHtml = `<div class="comp-validators" style="color:${confColor}">${abcPart}</div>`;
+
+    const isNew = !row;
+    if (isNew) {
+      row = document.createElement('div');
+      row.id = rowId;
+      row.className = 'comp-row arriving';
+      rowsDiv.appendChild(row);
+    }
+    row.dataset.count = count;
+    row.style.display = (hideZeros && count === 0) ? 'none' : '';
+    row.style.opacity = (!hideZeros && count === 0) ? '0.45' : '';
+
+    row.innerHTML = `
+      <div class="comp-code" style="color:#1c2b4a">${sym.code}</div>
+      <div>
+        <div class="comp-name">${sym.name}</div>
+        ${validHtml}
+      </div>
+      <div class="comp-qty qty-flash">${count} pcs</div>`;
+
+    if (isNew) setTimeout(() => row.classList.remove('arriving'), 300);
+  }
+
+  async function startAIStream(name, force) {
+    initStreamUI();
+    document.getElementById('recompute-btn').textContent = '↻ Running…';
+    document.getElementById('recompute-btn').disabled = true;
+
+    const url = `/drawing/${encodeURIComponent(name)}/run-ai-stream${force ? '?force=true' : ''}`;
+    let resp;
+    try {
+      resp = await fetch(url, { method: 'POST' });
+    } catch (err) {
+      document.getElementById('stream-phase-text').textContent = `✗ Network error: ${err.message}`;
+      document.querySelector('.stream-spinner').style.display = 'none';
+      document.getElementById('recompute-btn').textContent = '↻ Recompute';
+      document.getElementById('recompute-btn').disabled = false;
+      return;
+    }
+    if (!resp.ok) {
+      const msg = await resp.text();
+      document.getElementById('stream-phase-text').textContent = `✗ ${msg}`;
+      document.querySelector('.stream-spinner')?.remove();
+      document.getElementById('recompute-btn').textContent = '↻ Recompute';
+      document.getElementById('recompute-btn').disabled = false;
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const dec    = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) !== -1) {
+        const msg = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        for (const line of msg.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const ev = JSON.parse(line.slice(6));
+            if (ev.type === 'phase') {
+              const el = document.getElementById('stream-phase-text');
+              if (el) el.textContent = ev.msg;
+            } else if (ev.type === 'symbol') {
+              addStreamRow(ev);
+            } else if (ev.type === 'done') {
+              document.getElementById('stream-phase-bar')?.remove();
+              document.getElementById('recompute-btn').textContent = '↻ Recompute';
+              document.getElementById('recompute-btn').disabled = false;
+              const prev = currentDrawing;
+              currentDrawing = null;
+              await switchDrawing(prev);
+            } else if (ev.type === 'error') {
+              const el = document.getElementById('stream-phase-text');
+              if (el) { el.textContent = `✗ ${ev.message}`; el.style.color = '#9c2c2c'; }
+              document.querySelector('.stream-spinner')?.remove();
+              document.getElementById('recompute-btn').textContent = '↻ Recompute';
+              document.getElementById('recompute-btn').disabled = false;
+            }
+          } catch (e) {}
+        }
+      }
+    }
   }
 
   // ── file upload ────────────────────────────────────────────────────────────
@@ -951,6 +1111,8 @@
         b.classList.toggle('active', b.dataset.mode === extractionMode));
       document.getElementById('recompute-btn').style.display =
         extractionMode === 'ai' ? 'block' : 'none';
+      document.getElementById('hide-zeros-bar').style.display =
+        extractionMode === 'ai' ? 'flex' : 'none';
       // Re-fetch current drawing in new mode
       if (currentDrawing) {
         const prev = currentDrawing;
@@ -959,6 +1121,14 @@
       }
     });
   });
+
+  document.getElementById('hide-zeros-chk').addEventListener('change', e => {
+    hideZeros = e.target.checked;
+    applyHideZeros();
+  });
+
+  // Init bar visibility (default mode is 'ai')
+  document.getElementById('hide-zeros-bar').style.display = 'flex';
 
   // ── initial load ──────────────────────────────────────────────────────────
   loadDrawingList();
@@ -1144,8 +1314,8 @@
       const qty = s.measurement_type === 'length' ? (s.total_length_m ?? 0) : (s.count ?? 0);
       row.className = 'comp-row';
       row.dataset.vkey = variantKey(s);
+      row.dataset.count = qty;
       row.style.setProperty('--c', col(s));
-      if (extractionMode === 'ai' && qty === 0) row.style.opacity = '0.45';
 
       const sizeStr  = s.width_mm === 'per_drawing' ? 'per dwg'
                      : s.width_mm ? `${s.width_mm} mm` : '';
@@ -1278,6 +1448,7 @@
         list.appendChild(row);
       });
     }
+    if (extractionMode === 'ai') applyHideZeros();
   }
 
   // ── stable key for a summary / estimate item ─────────────────────────
