@@ -1613,31 +1613,69 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT:
 
 
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
-                        description: str) -> int | None:
-    """Qwen pass D — count one visual variant in the body image."""
+                        description: str,
+                        exclude_variants: list[dict] | None = None,
+                        legend_b64: str | None = None) -> int | None:
+    """Qwen pass D — count one visual variant in the body image.
+
+    legend_b64: optional legend image passed as a visual reference so Qwen can
+    see the exact symbol shape rather than relying solely on the text description.
+    Especially useful for purely graphical symbols with no standard letter code.
+    """
     client = _client_qwen()
     if client is None:
         return None
 
-    prompt = f"""You are counting symbols in a Swedish building services floor plan.
+    excl_block = ""
+    if exclude_variants:
+        lines = "\n".join(
+            f'  "{v["visual_id"]}" ({v["code"]}): {v.get("description", v["name"])}  ← do NOT count this'
+            for v in exclude_variants
+        )
+        excl_block = (
+            f"\nIMPORTANT — similar symbols that must NOT be counted in this call:\n"
+            f"{lines}\n"
+            f'Count ONLY "{code}" ({name}) as described above.\n'
+        )
+
+    if legend_b64:
+        prompt = f"""You are counting symbols in a Swedish building services floor plan.
+
+IMAGE 1 is the legend that shows what each symbol looks like.
+IMAGE 2 is the floor plan body (legend already removed) — count only real installed items.
+
+Find and count instances of the symbol labeled "{code}" ({name}) from the legend (IMAGE 1)
+in the floor plan (IMAGE 2).
+  Visual appearance: {description}
+{excl_block}
+Reply ONLY with a JSON object, nothing else:
+{{"{visual_id}": <integer>}}"""
+        content = [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{legend_b64}"}},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        prompt = f"""You are counting symbols in a Swedish building services floor plan.
 The legend box has already been removed from this image — count only real installed items.
 
 Count instances of this specific symbol:
   Code: "{code}"
   Name: {name}
   Visual appearance: {description}
-
+{excl_block}
 Reply ONLY with a JSON object, nothing else:
 {{"{visual_id}": <integer>}}"""
+        content = [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
+            {"type": "text", "text": prompt},
+        ]
 
     try:
         payload = {
             "model": QWEN_MODEL,
             "max_tokens": 64,
-            "messages": [{"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
-                {"type": "text", "text": prompt},
-            ]}],
+            "messages": [{"role": "user", "content": content}],
         }
         http_resp = _CLIENT_QWEN.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -1814,6 +1852,30 @@ def extract_with_images(legend_path: str, body_path: str,
         tile_passes.append(pass_sum)
         print(f"    { {k: v for k, v in pass_sum.items() if v > 0} }")
 
+    # ── Passes A / B / C for extra library items (isolated call per tile) ────
+    # Separate from legend passes so the two sets of symbols don't interfere.
+    extra_tile_passes: list[dict[str, int]] = []
+    if extra_count_items:
+        for pass_label in ["A", "B", "C"]:
+            _emit({"type": "phase", "phase": f"extra_{pass_label}",
+                   "msg": f"Pass {pass_label} (unlisted {len(extra_count_items)})…"})
+            ex_sum = {it["code"]: 0 for it in extra_count_items}
+            print(f"\n  Extra pass {pass_label} — {ROWS}×{COLS} tiled:")
+            for r in range(ROWS):
+                for c in range(COLS):
+                    tile_num = r * COLS + c + 1
+                    try:
+                        tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
+                        tile_cnt = _count_all_variants_in_tile(tile_b64, extra_count_items)
+                        for vid, cnt in tile_cnt.items():
+                            ex_sum[vid] += cnt
+                    except Exception as e:
+                        print(f"    extra tile({r},{c}) failed: {e}")
+                    _emit({"type": "progress",
+                           "msg": f"Pass {pass_label} (unlisted): {tile_num}/{ROWS*COLS}"})
+            extra_tile_passes.append(ex_sum)
+            print(f"    { {k: v for k, v in ex_sum.items() if v > 0} }")
+
     # ── Voting rule ──────────────────────────────────────────────────────────
     #   1. ≥3 of [A,B,C,D] agree        → that value  (high)
     #   2. A or C agrees with D          → D           (high)
@@ -1856,8 +1918,11 @@ def extract_with_images(legend_path: str, body_path: str,
         c = tile_passes[2].get(vid, 0)
 
         if qwen_ok:
+            excl = [x for x in count_syms if x["visual_id"] != vid]
             d = _count_variant_qwen(body_b64, vid, sym["code"],
-                                    sym["name"], sym.get("description", sym["name"]))
+                                    sym["name"], sym.get("description", sym["name"]),
+                                    exclude_variants=excl,
+                                    legend_b64=legend_b64)
             if d is not None:
                 print(f"    {vid}: {d}")
         else:
@@ -1868,6 +1933,11 @@ def extract_with_images(legend_path: str, body_path: str,
             conf = "high" if d is not None else "low"
         else:
             best, conf = _vote(a, b, c, d)
+            # When all tile passes returned 0 but Qwen found instances, the batch
+            # tile counting likely confused this symbol with a similar neighbour.
+            # Trust Qwen (with low confidence) rather than locking in a false zero.
+            if best == 0 and a == 0 and b == 0 and c == 0 and d is not None and d > 0:
+                best, conf = d, "low"
 
         d_str  = str(d) if d is not None else "—"
         marker = " [visual-only]" if is_variant else ""
@@ -1890,60 +1960,34 @@ def extract_with_images(legend_path: str, body_path: str,
             "d":          d,
         })
 
-    # ── Extra library items: Qwen full-image (falls back to tiled text scan) ───
-    # These have no legend visual reference, so tiled A/B/C cannot recognise them.
-    # Qwen sees the complete image and can count by visual appearance + name hint.
+    # ── Extra library items: vote A/B/C (tile passes above) + Qwen D ──────────
     if extra_count_items:
-        if qwen_ok:
-            _emit({"type": "phase", "phase": "qwen_extra",
-                   "msg": f"Qwen: {len(extra_count_items)} unlisted item(s)…"})
-            print(f"\n  Extra items (Qwen full-image):")
-            for sym in extra_count_items:
-                vid  = sym["visual_id"]
-                desc = sym.get("description") or sym["name"]
-                d    = _count_variant_qwen(body_b64, vid, sym["code"], sym["name"], desc)
-                best = d if d is not None else 0
-                conf = "high" if d is not None else "low"
-                d_str = str(d) if d is not None else "—"
-                print(f"    {vid}: D={d_str}  → {best} ({conf})")
-                counts[vid] = {"a": None, "b": None, "c": None,
-                               "d": d, "final": best, "confidence": conf}
-                _emit({
-                    "type": "symbol", "visual_id": vid,
-                    "code": sym["code"], "name": sym["name"],
-                    "count": best, "confidence": conf,
-                    "a": None, "b": None, "c": None, "d": d,
-                })
-        else:
-            # Fallback when Qwen is unavailable: tiled text-label scan
-            _emit({"type": "phase", "phase": "text_pass",
-                   "msg": f"Text-scanning {len(extra_count_items)} unlisted item(s)…"})
-            print(f"\n  Extra items text pass — {ROWS}×{COLS} tiled:")
-            text_sum = {it["code"]: 0 for it in extra_count_items}
-            for r in range(ROWS):
-                for c_idx in range(COLS):
-                    tile_num = r * COLS + c_idx + 1
-                    try:
-                        tb = _tile_png_b64(body_path, r, c_idx, ROWS, COLS)
-                        tc = _count_text_labels_in_tile(tb, extra_count_items)
-                        for code, cnt in tc.items():
-                            text_sum[code] += cnt
-                    except Exception as e:
-                        print(f"    text tile({r},{c_idx}) failed: {e}")
-                    _emit({"type": "progress",
-                           "msg": f"Text scan: {tile_num}/{ROWS*COLS} tiles"})
-            print(f"    { {k: v for k, v in text_sum.items() if v > 0} }")
-            for it in extra_count_items:
-                code = it["code"]
-                cnt  = text_sum.get(code, 0)
-                counts[code] = {"a": None, "b": None, "c": None, "d": None,
-                                "final": cnt, "confidence": "medium", "text_scan": cnt}
-                _emit({
-                    "type": "symbol", "visual_id": code,
-                    "code": code, "name": it["name"],
-                    "count": cnt, "confidence": "medium",
-                    "a": None, "b": None, "c": None, "d": None,
-                })
+        phase_msg = (f"Qwen: {len(extra_count_items)} unlisted item(s)…"
+                     if qwen_ok else "Voting unlisted items…")
+        _emit({"type": "phase", "phase": "qwen_extra", "msg": phase_msg})
+        print(f"\n  Extra items — vote + {'Qwen' if qwen_ok else 'no Qwen'}:")
+        print(f"  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
+        for sym in extra_count_items:
+            vid  = sym["visual_id"]
+            a_ex = extra_tile_passes[0].get(vid, 0) if extra_tile_passes else 0
+            b_ex = extra_tile_passes[1].get(vid, 0) if extra_tile_passes else 0
+            c_ex = extra_tile_passes[2].get(vid, 0) if extra_tile_passes else 0
+            desc = sym.get("description") or sym["name"]
+            d    = _count_variant_qwen(body_b64, vid, sym["code"], sym["name"], desc,
+                                       legend_b64=legend_b64) \
+                   if qwen_ok else None
+            best, conf = _vote(a_ex, b_ex, c_ex, d)
+            d_str = str(d) if d is not None else "—"
+            icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
+            print(f"    {vid:<18} A={a_ex} B={b_ex} C={c_ex} D={d_str}  → {best} ({conf}) {icon}")
+            counts[vid] = {"a": a_ex, "b": b_ex, "c": c_ex,
+                           "d": d, "final": best, "confidence": conf}
+            _emit({
+                "type": "symbol", "visual_id": vid,
+                "code": sym["code"], "name": sym["name"],
+                "count": best, "confidence": conf,
+                "a": a_ex, "b": b_ex, "c": c_ex, "d": d,
+            })
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}

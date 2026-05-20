@@ -16,6 +16,8 @@ import os
 import sys
 import threading
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, Response, JSONResponse, StreamingResponse
 import fitz
