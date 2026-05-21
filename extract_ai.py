@@ -1827,21 +1827,27 @@ def extract_with_images(legend_path: str, body_path: str,
     counts: dict[str, dict] = {}
 
     # ── Passes A / B / C: independent 3×3 tiled counts ──────────────────────
-    # Same straight grid (no offsets), three independent API call sets.
-    # Model stochasticity means they can diverge — the voting rule below
-    # exploits agreement to pick the right answer.
+    # Each pass uses a different grid offset so that symbols at tile boundaries
+    # in pass A fall in the centre of tiles in pass B or C — catching the
+    # fixtures that a fixed grid would miss in all three passes.
+    #   A: standard grid  (offset 0,   0  )
+    #   B: shift x by 0.5 tile  (catches vertical-boundary misses from A)
+    #   C: shift y by 0.5 tile  (catches horizontal-boundary misses from A)
     ROWS, COLS = 3, 3
+    _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
     tile_passes: list[dict[str, int]] = []
     for pass_label in ["A", "B", "C"]:
+        ox, oy = _PASS_OFFSETS[pass_label]
         _emit({"type": "phase", "phase": f"pass_{pass_label}",
                "msg": f"Tiling pass {pass_label} ({ROWS}×{COLS})…"})
         pass_sum = {s["visual_id"]: 0 for s in count_syms}
-        print(f"\n  Pass {pass_label} — {ROWS}×{COLS} tiled:")
+        print(f"\n  Pass {pass_label} — {ROWS}×{COLS} tiled (offset {ox},{oy}):")
         for r in range(ROWS):
             for c in range(COLS):
                 tile_num = r * COLS + c + 1
                 try:
-                    tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
+                    tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
+                                             offset_x=ox, offset_y=oy)
                     tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
                     for vid, cnt in tile_cnt.items():
                         pass_sum[vid] += cnt
@@ -1857,15 +1863,17 @@ def extract_with_images(legend_path: str, body_path: str,
     extra_tile_passes: list[dict[str, int]] = []
     if extra_count_items:
         for pass_label in ["A", "B", "C"]:
+            ox, oy = _PASS_OFFSETS[pass_label]
             _emit({"type": "phase", "phase": f"extra_{pass_label}",
                    "msg": f"Pass {pass_label} (unlisted {len(extra_count_items)})…"})
             ex_sum = {it["code"]: 0 for it in extra_count_items}
-            print(f"\n  Extra pass {pass_label} — {ROWS}×{COLS} tiled:")
+            print(f"\n  Extra pass {pass_label} — {ROWS}×{COLS} tiled (offset {ox},{oy}):")
             for r in range(ROWS):
                 for c in range(COLS):
                     tile_num = r * COLS + c + 1
                     try:
-                        tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS)
+                        tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
+                                                 offset_x=ox, offset_y=oy)
                         tile_cnt = _count_all_variants_in_tile(tile_b64, extra_count_items)
                         for vid, cnt in tile_cnt.items():
                             ex_sum[vid] += cnt
@@ -1877,22 +1885,24 @@ def extract_with_images(legend_path: str, body_path: str,
             print(f"    { {k: v for k, v in ex_sum.items() if v > 0} }")
 
     # ── Voting rule ──────────────────────────────────────────────────────────
-    #   1. ≥3 of [A,B,C,D] agree        → that value  (high)
-    #   2. A or C agrees with D          → D           (high)
-    #   3. A == C                        → A           (medium)
-    #   4. All other cases               → D           (low)
+    # Because passes A/B/C now use different grid offsets, they legitimately
+    # diverge: each pass catches different boundary-edge symbols.
+    # Boundary misses only REDUCE counts (never inflate), so max(A,B,C) is
+    # the best tile estimate.  D (Qwen, full image) acts as a sanity check.
+    #
+    #   tile_best = max(A, B, C)
+    #   1. tile_best and D agree within 20%  → tile_best  (high)
+    #   2. D not available                   → tile_best  (high if A==B==C, else medium)
+    #   3. tile_best and D disagree > 20%    → tile_best  (medium — flag for review)
     def _vote(a: int, b: int, c: int, d: int | None) -> tuple[int, str]:
-        vals = [a, b, c] + ([d] if d is not None else [])
-        for v in set(vals):
-            if vals.count(v) >= 3:
-                return v, "high"
-        if d is not None and (a == d or c == d):
-            return d, "high"
-        if a == c:
-            return a, "medium"
+        tile_best = max(a, b, c)
         if d is not None:
-            return d, "low"
-        return a, "low"   # D unavailable fallback
+            denom = tile_best if tile_best > 0 else (d if d > 0 else 1)
+            ratio = abs(tile_best - d) / denom
+            conf  = "high" if ratio <= 0.20 else "medium"
+        else:
+            conf = "high" if a == b == c else "medium"
+        return tile_best, conf
 
     # A symbol is a true visual variant only when multiple legend entries share
     # the same code (e.g. two different "A" symbols). A unique code like "C" that
