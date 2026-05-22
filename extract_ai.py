@@ -1826,177 +1826,115 @@ def extract_with_images(legend_path: str, body_path: str,
 
     counts: dict[str, dict] = {}
 
-    # ── Passes A / B / C: independent 3×3 tiled counts ──────────────────────
-    # Each pass uses a different grid offset so that symbols at tile boundaries
-    # in pass A fall in the centre of tiles in pass B or C — catching the
-    # fixtures that a fixed grid would miss in all three passes.
-    #   A: standard grid  (offset 0,   0  )
-    #   B: shift x by 0.5 tile  (catches vertical-boundary misses from A)
-    #   C: shift y by 0.5 tile  (catches horizontal-boundary misses from A)
-    ROWS, COLS = 3, 3
+    # ── Classify: unique-letter vs variant (same code, multiple visuals) ─────
+    from collections import Counter as _Counter
+    _code_freq   = _Counter(s["code"] for s in count_syms)
+    unique_syms  = [s for s in count_syms if _code_freq[s["code"]] == 1]
+    variant_syms = [s for s in count_syms if _code_freq[s["code"]] > 1]
+    print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
+
+    # ── Pass C: unique-letter symbols, one 3×3 tiled pass (offset 0, 0.5) ───
+    ROWS, COLS   = 3, 3
     _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
-    tile_passes: list[dict[str, int]] = []
-    for pass_label in ["A", "B", "C"]:
-        ox, oy = _PASS_OFFSETS[pass_label]
-        _emit({"type": "phase", "phase": f"pass_{pass_label}",
-               "msg": f"Tiling pass {pass_label} ({ROWS}×{COLS})…"})
-        pass_sum = {s["visual_id"]: 0 for s in count_syms}
-        print(f"\n  Pass {pass_label} — {ROWS}×{COLS} tiled (offset {ox},{oy}):")
+    pass_c: dict[str, int] = {s["visual_id"]: 0 for s in unique_syms}
+    tile_passes: list[dict[str, int]] = []        # kept for extra_count_items
+    if unique_syms:
+        _emit({"type": "phase", "phase": "pass_C",
+               "msg": f"Pass C — {len(unique_syms)} unique symbol(s)…"})
+        print(f"\n  Pass C — {ROWS}×{COLS} tiled (unique symbols, offset 0,0.5):")
         for r in range(ROWS):
             for c in range(COLS):
                 tile_num = r * COLS + c + 1
                 try:
                     tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
-                                             offset_x=ox, offset_y=oy)
-                    tile_cnt = _count_all_variants_in_tile(tile_b64, count_syms)
+                                             offset_x=0.0, offset_y=0.5)
+                    tile_cnt = _count_all_variants_in_tile(tile_b64, unique_syms)
                     for vid, cnt in tile_cnt.items():
-                        pass_sum[vid] += cnt
-                except Exception as e:
-                    print(f"    tile({r},{c}) failed: {e}")
+                        pass_c[vid] += cnt
+                except Exception as exc:
+                    print(f"    tile({r},{c}) failed: {exc}")
                 _emit({"type": "progress",
-                       "msg": f"Pass {pass_label}: {tile_num}/{ROWS*COLS} tiles"})
-        tile_passes.append(pass_sum)
-        print(f"    { {k: v for k, v in pass_sum.items() if v > 0} }")
+                       "msg": f"Pass C: {tile_num}/{ROWS*COLS} tiles"})
+        print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
 
-    # ── Passes A / B / C for extra library items (isolated call per tile) ────
-    # Separate from legend passes so the two sets of symbols don't interfere.
-    extra_tile_passes: list[dict[str, int]] = []
-    if extra_count_items:
-        for pass_label in ["A", "B", "C"]:
-            ox, oy = _PASS_OFFSETS[pass_label]
-            _emit({"type": "phase", "phase": f"extra_{pass_label}",
-                   "msg": f"Pass {pass_label} (unlisted {len(extra_count_items)})…"})
-            ex_sum = {it["code"]: 0 for it in extra_count_items}
-            print(f"\n  Extra pass {pass_label} — {ROWS}×{COLS} tiled (offset {ox},{oy}):")
-            for r in range(ROWS):
-                for c in range(COLS):
-                    tile_num = r * COLS + c + 1
-                    try:
-                        tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
-                                                 offset_x=ox, offset_y=oy)
-                        tile_cnt = _count_all_variants_in_tile(tile_b64, extra_count_items)
-                        for vid, cnt in tile_cnt.items():
-                            ex_sum[vid] += cnt
-                    except Exception as e:
-                        print(f"    extra tile({r},{c}) failed: {e}")
-                    _emit({"type": "progress",
-                           "msg": f"Pass {pass_label} (unlisted): {tile_num}/{ROWS*COLS}"})
-            extra_tile_passes.append(ex_sum)
-            print(f"    { {k: v for k, v in ex_sum.items() if v > 0} }")
 
-    # ── Voting rule ──────────────────────────────────────────────────────────
-    # Because passes A/B/C now use different grid offsets, they legitimately
-    # diverge: each pass catches different boundary-edge symbols.
-    # Boundary misses only REDUCE counts (never inflate), so max(A,B,C) is
-    # the best tile estimate.  D (Qwen, full image) acts as a sanity check.
-    #
-    #   tile_best = max(A, B, C)
-    #   1. tile_best and D agree within 20%  → tile_best  (high)
-    #   2. D not available                   → tile_best  (high if A==B==C, else medium)
-    #   3. tile_best and D disagree > 20%    → tile_best  (medium — flag for review)
-    def _vote(a: int, b: int, c: int, d: int | None) -> tuple[int, str]:
-        tile_best = max(a, b, c)
-        if d is not None:
-            denom = tile_best if tile_best > 0 else (d if d > 0 else 1)
-            ratio = abs(tile_best - d) / denom
-            conf  = "high" if ratio <= 0.20 else "medium"
-        else:
-            conf = "high" if a == b == c else "medium"
-        return tile_best, conf
 
-    # A symbol is a true visual variant only when multiple legend entries share
-    # the same code (e.g. two different "A" symbols). A unique code like "C" that
-    # Claude named "circle_C" is NOT a variant even though visual_id != code.
-    from collections import Counter as _Counter
-    _code_freq = _Counter(s["code"] for s in count_syms)
 
-    # ── Pass D: Qwen full-image count + per-symbol vote (streamed) ───────────
-    if qwen_ok:
-        _emit({"type": "phase", "phase": "qwen",
-               "msg": f"Qwen counting {len(count_syms)} symbol(s)…"})
-        print(f"\n  Pass D — Qwen full-image:")
-    else:
-        _emit({"type": "phase", "phase": "voting", "msg": "Voting…"})
-
-    print(f"\n  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
-    for sym in count_syms:
-        vid        = sym["visual_id"]
-        is_variant = _code_freq[sym["code"]] > 1
-
-        a = tile_passes[0].get(vid, 0)
-        b = tile_passes[1].get(vid, 0)
-        c = tile_passes[2].get(vid, 0)
-
+    # ── Pass D: variant symbols — Qwen full-image, one call per symbol ───────
+    pass_d: dict[str, int | None] = {s["visual_id"]: None for s in variant_syms}
+    if variant_syms:
         if qwen_ok:
-            excl = [x for x in count_syms if x["visual_id"] != vid]
-            d = _count_variant_qwen(body_b64, vid, sym["code"],
-                                    sym["name"], sym.get("description", sym["name"]),
-                                    exclude_variants=excl,
-                                    legend_b64=legend_b64)
-            if d is not None:
-                print(f"    {vid}: {d}")
+            _emit({"type": "phase", "phase": "pass_D",
+                   "msg": f"Pass D — Qwen: {len(variant_syms)} variant(s)…"})
+            print(f"\n  Pass D — Qwen full-image (variant symbols):")
+            for sym in variant_syms:
+                vid  = sym["visual_id"]
+                excl = [x for x in variant_syms if x["visual_id"] != vid]
+                d_v  = _count_variant_qwen(body_b64, vid, sym["code"],
+                                           sym["name"],
+                                           sym.get("description", sym["name"]),
+                                           exclude_variants=excl,
+                                           legend_b64=legend_b64)
+                pass_d[vid] = d_v
+                print(f"    {vid}: {d_v if d_v is not None else '—'}")
         else:
-            d = None
+            print(f"\n  Pass D skipped — OPENROUTER_API_KEY not set")
 
-        if is_variant:
-            best = d if d is not None else 0
-            conf = "high" if d is not None else "low"
+    # ── Final counts ──────────────────────────────────────────────────────────
+    print(f"\n  {'Code':<20} {'count':>6}  pass  conf")
+    for sym in count_syms:
+        vid       = sym["visual_id"]
+        is_unique = _code_freq[sym["code"]] == 1
+
+        if is_unique:
+            final  = pass_c.get(vid, 0)
+            conf   = "high"
+            method = "C"
         else:
-            best, conf = _vote(a, b, c, d)
-            # When all tile passes returned 0 but Qwen found instances, the batch
-            # tile counting likely confused this symbol with a similar neighbour.
-            # Trust Qwen (with low confidence) rather than locking in a false zero.
-            if best == 0 and a == 0 and b == 0 and c == 0 and d is not None and d > 0:
-                best, conf = d, "low"
+            d      = pass_d.get(vid)
+            final  = d if d is not None else 0
+            conf   = "high" if d is not None else "low"
+            method = "D"
 
-        d_str  = str(d) if d is not None else "—"
-        marker = " [visual-only]" if is_variant else ""
-        icon   = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
-        print(f"    {vid:<18} A={a} B={b} C={c} D={d_str}  → {best} ({conf}) {icon}{marker}")
-        counts[vid] = {"a": a if not is_variant else None,
-                       "b": b if not is_variant else None,
-                       "c": c if not is_variant else None,
-                       "d": d, "final": best, "confidence": conf}
+        icon = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
+        print(f"    {vid:<20} {final:>6}  {method}     {conf} {icon}")
+        counts[vid] = {
+            "c":          pass_c.get(vid) if is_unique  else None,
+            "d":          pass_d.get(vid) if not is_unique else None,
+            "final":      final,
+            "confidence": conf,
+        }
         _emit({
             "type":       "symbol",
             "visual_id":  vid,
             "code":       sym["code"],
             "name":       sym.get("name", sym["code"]),
-            "count":      best,
+            "count":      final,
             "confidence": conf,
-            "a":          a if not is_variant else None,
-            "b":          b if not is_variant else None,
-            "c":          c if not is_variant else None,
-            "d":          d,
+            "c":          pass_c.get(vid) if is_unique  else None,
+            "d":          pass_d.get(vid) if not is_unique else None,
         })
 
-    # ── Extra library items: vote A/B/C (tile passes above) + Qwen D ──────────
+    # ── Extra library items: Pass D only (Qwen full-image) ───────────────────
     if extra_count_items:
-        phase_msg = (f"Qwen: {len(extra_count_items)} unlisted item(s)…"
-                     if qwen_ok else "Voting unlisted items…")
-        _emit({"type": "phase", "phase": "qwen_extra", "msg": phase_msg})
-        print(f"\n  Extra items — vote + {'Qwen' if qwen_ok else 'no Qwen'}:")
-        print(f"  {'Code':<20} {'A':>4} {'B':>4} {'C':>4} {'D':>4}  result  conf")
+        _emit({"type": "phase", "phase": "pass_D_extra",
+               "msg": f"Pass D — {len(extra_count_items)} unlisted item(s)…"})
+        print(f"\n  Extra items — Pass D (Qwen):")
         for sym in extra_count_items:
             vid  = sym["visual_id"]
-            a_ex = extra_tile_passes[0].get(vid, 0) if extra_tile_passes else 0
-            b_ex = extra_tile_passes[1].get(vid, 0) if extra_tile_passes else 0
-            c_ex = extra_tile_passes[2].get(vid, 0) if extra_tile_passes else 0
             desc = sym.get("description") or sym["name"]
             d    = _count_variant_qwen(body_b64, vid, sym["code"], sym["name"], desc,
                                        legend_b64=legend_b64) \
                    if qwen_ok else None
-            best, conf = _vote(a_ex, b_ex, c_ex, d)
-            d_str = str(d) if d is not None else "—"
+            final = d if d is not None else 0
+            conf  = "high" if d is not None else "low"
             icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
-            print(f"    {vid:<18} A={a_ex} B={b_ex} C={c_ex} D={d_str}  → {best} ({conf}) {icon}")
-            counts[vid] = {"a": a_ex, "b": b_ex, "c": c_ex,
-                           "d": d, "final": best, "confidence": conf}
+            print(f"    {vid:<20} {final:>6}  D     {conf} {icon}")
+            counts[vid] = {"d": d, "final": final, "confidence": conf}
             _emit({
                 "type": "symbol", "visual_id": vid,
                 "code": sym["code"], "name": sym["name"],
-                "count": best, "confidence": conf,
-                "a": a_ex, "b": b_ex, "c": c_ex, "d": d,
+                "count": final, "confidence": conf, "d": d,
             })
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
@@ -2029,7 +1967,7 @@ def extract_with_images(legend_path: str, body_path: str,
             ct     = counts.get(vid, {})
             qty    = ct.get("final", 0)
             conf   = ct.get("confidence", "unknown")
-            method = "vision"
+            method = "pass_C" if ct.get("c") is not None else "pass_D"
             components.append({
                 "id": f"IMG_{vid}_{i}", "type": vid, "name": name,
                 "en_name": "", "color": color, "size": None,
@@ -2044,9 +1982,8 @@ def extract_with_images(legend_path: str, body_path: str,
                 "width_mm": None, "ok_ofg_mm": None, "uk_ofg_mm": None,
                 "fire_rating": None, "measurement_type": "count", "unit": "pcs",
                 "count": qty, "count_method": method, "count_confidence": conf,
-                "count_grid_a": ct.get("a"), "count_grid_b": ct.get("b"),
-                "count_grid_c": ct.get("c"), "count_grid_d": ct.get("d"),
-                "count_text": ct.get("text_scan"), "count_vision": None,
+                "count_pass_c": ct.get("c"),
+                "count_pass_d": ct.get("d"),
                 "original_code": code,
             })
         else:
