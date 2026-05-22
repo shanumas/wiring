@@ -113,6 +113,21 @@ def save_ai_cache(pdf_path: str, result: dict) -> None:
     p.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
 
 
+def _file_hash(path: str) -> str:
+    return hashlib.sha1(Path(path).read_bytes()).hexdigest()[:12]
+
+def _step_cache_get(key: str):
+    p = AI_CACHE_DIR / f"step_{key}.json"
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return None
+
+def _step_cache_set(key: str, value) -> None:
+    (AI_CACHE_DIR / f"step_{key}.json").write_text(
+        json.dumps(value, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 # ── PDF text-based symbol counting ───────────────────────────────────────────
 
 def _count_from_pdf_text(pdf_path: str, codes: list[dict],
@@ -1768,15 +1783,24 @@ def extract_with_images(legend_path: str, body_path: str,
     page_w, page_h = _png_wh(body_path)
     legend_b64 = _image_file_to_b64(legend_path)
     body_b64   = _image_file_to_b64(body_path)
+    _leg_hash  = _file_hash(legend_path)
+    _body_hash = _file_hash(body_path)
 
     # ── Step 1: legend analysis ──────────────────────────────────────────────
     _emit({"type": "phase", "phase": "legend", "msg": "Analysing legend…"})
-    print("  [AI] Analysing legend image …")
-    try:
-        symbols = _analyse_legend_image(legend_b64, component_library)
-    except Exception as exc:
-        print(f"  [AI] Legend analysis failed: {exc}")
-        symbols = []
+    _leg_cache_key = f"legend_{_leg_hash}"
+    _cached_leg = _step_cache_get(_leg_cache_key)
+    if _cached_leg is not None:
+        symbols = _cached_leg
+        print(f"  [AI] Legend loaded from cache ({_leg_hash})")
+    else:
+        print("  [AI] Analysing legend image …")
+        try:
+            symbols = _analyse_legend_image(legend_b64, component_library)
+            _step_cache_set(_leg_cache_key, symbols)
+        except Exception as exc:
+            print(f"  [AI] Legend analysis failed: {exc}")
+            symbols = []
     print(f"  [AI] {len(symbols)} symbol variant(s) found:")
     for s in symbols:
         print(f"    {s['visual_id']!r:16} code={s['code']!r}  [{s['measurement_type']}]  {s['name']}")
@@ -1834,31 +1858,37 @@ def extract_with_images(legend_path: str, body_path: str,
     print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
 
     # ── Pass C: unique-letter symbols, one 3×3 tiled pass (offset 0, 0.5) ───
-    ROWS, COLS   = 3, 3
+    ROWS, COLS    = 3, 3
     _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
     pass_c: dict[str, int] = {s["visual_id"]: 0 for s in unique_syms}
-    tile_passes: list[dict[str, int]] = []        # kept for extra_count_items
+    tile_passes: list[dict[str, int]] = []
     if unique_syms:
-        _emit({"type": "phase", "phase": "pass_C",
-               "msg": f"Pass C — {len(unique_syms)} unique symbol(s)…"})
-        print(f"\n  Pass C — {ROWS}×{COLS} tiled (unique symbols, offset 0,0.5):")
-        for r in range(ROWS):
-            for c in range(COLS):
-                tile_num = r * COLS + c + 1
-                try:
-                    tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
-                                             offset_x=0.0, offset_y=0.5)
-                    tile_cnt = _count_all_variants_in_tile(tile_b64, unique_syms)
-                    for vid, cnt in tile_cnt.items():
-                        pass_c[vid] += cnt
-                except Exception as exc:
-                    print(f"    tile({r},{c}) failed: {exc}")
-                _emit({"type": "progress",
-                       "msg": f"Pass C: {tile_num}/{ROWS*COLS} tiles"})
-        print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
-
-
-
+        _c_key    = f"pass_c_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
+        _c_key    = f"pass_c_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
+        _cached_c = _step_cache_get(_c_key)
+        if _cached_c is not None:
+            pass_c = _cached_c
+            print(f"\n  Pass C loaded from cache ({_c_key})")
+            _emit({"type": "phase", "phase": "pass_C", "msg": "Pass C (cached)"})
+        else:
+            _emit({"type": "phase", "phase": "pass_C",
+                   "msg": f"Pass C — {len(unique_syms)} unique symbol(s)…"})
+            print(f"\n  Pass C — {ROWS}×{COLS} tiled (unique symbols, offset 0,0.5):")
+            for r in range(ROWS):
+                for c in range(COLS):
+                    tile_num = r * COLS + c + 1
+                    try:
+                        tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
+                                                 offset_x=0.0, offset_y=0.5)
+                        tile_cnt = _count_all_variants_in_tile(tile_b64, unique_syms)
+                        for vid, cnt in tile_cnt.items():
+                            pass_c[vid] += cnt
+                    except Exception as exc:
+                        print(f"    tile({r},{c}) failed: {exc}")
+                    _emit({"type": "progress",
+                           "msg": f"Pass C: {tile_num}/{ROWS*COLS} tiles"})
+            print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
+            _step_cache_set(_c_key, pass_c)
 
     # ── Pass D: variant symbols — Qwen full-image, one call per symbol ───────
     pass_d: dict[str, int | None] = {s["visual_id"]: None for s in variant_syms}
@@ -1868,15 +1898,22 @@ def extract_with_images(legend_path: str, body_path: str,
                    "msg": f"Pass D — Qwen: {len(variant_syms)} variant(s)…"})
             print(f"\n  Pass D — Qwen full-image (variant symbols):")
             for sym in variant_syms:
-                vid  = sym["visual_id"]
-                excl = [x for x in variant_syms if x["visual_id"] != vid]
-                d_v  = _count_variant_qwen(body_b64, vid, sym["code"],
-                                           sym["name"],
-                                           sym.get("description", sym["name"]),
-                                           exclude_variants=excl,
-                                           legend_b64=legend_b64)
-                pass_d[vid] = d_v
-                print(f"    {vid}: {d_v if d_v is not None else '—'}")
+                vid     = sym["visual_id"]
+                _d_key  = f"pass_d_{_body_hash}_{hashlib.sha1(vid.encode()).hexdigest()[:8]}"
+                _cached_d = _step_cache_get(_d_key)
+                if _cached_d is not None:
+                    pass_d[vid] = _cached_d.get("count")
+                    print(f"    {vid}: {pass_d[vid]} (cached)")
+                else:
+                    excl   = [x for x in variant_syms if x["visual_id"] != vid]
+                    d_v    = _count_variant_qwen(body_b64, vid, sym["code"],
+                                                 sym["name"],
+                                                 sym.get("description", sym["name"]),
+                                                 exclude_variants=excl,
+                                                 legend_b64=legend_b64)
+                    pass_d[vid] = d_v
+                    _step_cache_set(_d_key, {"count": d_v})
+                    print(f"    {vid}: {d_v if d_v is not None else '—'}")
         else:
             print(f"\n  Pass D skipped — OPENROUTER_API_KEY not set")
 
@@ -1940,16 +1977,25 @@ def extract_with_images(legend_path: str, body_path: str,
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
     lengths: dict[str, float] = {}
     if length_syms:
-        _emit({"type": "phase", "phase": "lengths",
-               "msg": f"Estimating lengths for {len(length_syms)} item(s)…"})
-        print(f"\n  Estimating lengths for {len(length_syms)} item(s) …")
-        try:
-            lengths = _estimate_lengths_from_body(body_b64, length_syms)
-            for vid, m in lengths.items():
-                print(f"    {vid}: {m:.1f} m")
-        except Exception as exc:
-            print(f"  [AI] Length estimation failed: {exc}")
-            lengths = {}
+        _len_key    = f"lengths_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in length_syms))
+        _len_key    = f"lengths_{hashlib.sha1(_len_key.encode()).hexdigest()[:12]}"
+        _cached_len = _step_cache_get(_len_key)
+        if _cached_len is not None:
+            lengths = _cached_len
+            print(f"\n  Lengths loaded from cache ({_len_key})")
+            _emit({"type": "phase", "phase": "lengths", "msg": "Lengths (cached)"})
+        else:
+            _emit({"type": "phase", "phase": "lengths",
+                   "msg": f"Estimating lengths for {len(length_syms)} item(s)…"})
+            print(f"\n  Estimating lengths for {len(length_syms)} item(s) …")
+            try:
+                lengths = _estimate_lengths_from_body(body_b64, length_syms)
+                for vid, m in lengths.items():
+                    print(f"    {vid}: {m:.1f} m")
+                _step_cache_set(_len_key, lengths)
+            except Exception as exc:
+                print(f"  [AI] Length estimation failed: {exc}")
+                lengths = {}
 
     # ── Assemble standard schema ─────────────────────────────────────────────
     components: list[dict] = []
