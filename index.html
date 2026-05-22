@@ -927,13 +927,12 @@
     const icon      = isHigh ? '✓' : isMed ? '⚠' : '✗';
     const confColor = isHigh ? '#2a7a3a' : isMed ? '#8a6200' : '#9c2c2c';
 
-    const dPart = sym.d != null
-      ? ` <span style="color:#5a3a7a">D:${sym.d}</span>`
-      : ` <span style="color:#aaa">D:—</span>`;
-    const abcPart = sym.a != null
-      ? `${icon} A:${sym.a} B:${sym.b} C:${sym.c}${dPart}`
-      : `${icon} <span style="color:#888;font-style:italic">visual-only</span>${dPart}`;
-    const validHtml = `<div class="comp-validators" style="color:${confColor}">${abcPart}</div>`;
+    const methodPart = sym.c != null
+      ? `${icon} <span style="color:#1a5276">text search C:${sym.c}</span>`
+      : sym.d != null
+        ? `${icon} <span style="color:#5a3a7a">vision D:${sym.d}</span>`
+        : `${icon}`;
+    const validHtml = `<div class="comp-validators" style="color:${confColor}">${methodPart}</div>`;
 
     const isNew = !row;
     if (isNew) {
@@ -1418,17 +1417,15 @@
             ${icon} <span title="Exact PDF text count">T:${s.count_text}</span>${visionStr}${medNote}${mismatch}
           </div>`;
         } else {
-          // Vision majority-vote display (A/B/C = Claude passes, D = Qwen)
           const manualNote = isLow
             ? `<span style="font-weight:600"> — needs manual check</span>` : '';
-          const dPart = s.count_grid_d != null
-            ? ` <span title="Qwen validator" style="color:#5a3a7a">D:${s.count_grid_d}</span>`
-            : ` <span title="Qwen not configured" style="color:#aaaaaa">D:—</span>`;
-          const abcStr = s.count_grid_a != null
-            ? `A:${s.count_grid_a} B:${s.count_grid_b} C:${s.count_grid_c}`
-            : `<span style="color:#888;font-style:italic">visual-only</span>`;
+          const methodStr = s.count_pass_c != null
+            ? `<span title="Exact text label search" style="color:#1a5276">text search C:${s.count_pass_c}</span>`
+            : s.count_pass_d != null
+              ? `<span title="Qwen vision count" style="color:#5a3a7a">vision D:${s.count_pass_d}</span>`
+              : `<span style="color:#888">—</span>`;
           validatorHtml = `<div class="comp-validators" style="color:${confColor}">
-            ${icon} ${abcStr}${dPart}${manualNote}
+            ${icon} ${methodStr}${manualNote}
           </div>`;
         }
       }

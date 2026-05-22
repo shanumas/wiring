@@ -1627,6 +1627,46 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT:
         return 0
 
 
+def _count_labels_full_image(body_b64: str, symbols: list[dict]) -> dict[str, int]:
+    """Pass C — count each unique-letter code as an exact text label on the full body image."""
+    codes_block = "\n".join(
+        f'  "{s["code"]}": {s["name"]}'
+        for s in symbols
+    )
+    prompt = f"""You are reading text labels on a building services floor plan.
+
+Count how many times each code appears as an EXACT standalone text label in the drawing body.
+
+EXACT MATCH RULES — critical:
+- "P1" matches ONLY the label "P1", NOT "P11", "P12", "P13" etc.
+- A code only matches when it is NOT immediately followed by another digit or letter.
+- Do NOT count codes inside the legend/förklaringar box or title block.
+- Count only labels placed in the actual floor plan (rooms, corridors, shafts).
+
+Codes to count:
+{codes_block}
+
+YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
+The very first character must be {{ and the last must be }}.
+Map each code string to its integer count."""
+
+    resp = _client().messages.create(
+        model=SONNET, max_tokens=512,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
+            {"type": "text", "text": prompt},
+        ]}],
+    )
+    try:
+        result = _extract_json(resp.content[0].text)
+        # case-insensitive lookup in case Claude lowercases the keys
+        lower_result = {k.lower(): v for k, v in result.items()}
+        return {s["visual_id"]: int(lower_result.get(s["code"].lower(), 0)) for s in symbols}
+    except Exception as exc:
+        print(f"  [Claude] Pass C label search failed: {exc}")
+        return {s["visual_id"]: 0 for s in symbols}
+
+
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
                         description: str,
                         exclude_variants: list[dict] | None = None,
@@ -1857,14 +1897,12 @@ def extract_with_images(legend_path: str, body_path: str,
     variant_syms = [s for s in count_syms if _code_freq[s["code"]] > 1]
     print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
 
-    # ── Pass C: unique-letter symbols, one 3×3 tiled pass (offset 0, 0.5) ───
-    ROWS, COLS    = 3, 3
+    # ── Pass C: unique-letter symbols — exact text label search on full image ──
     _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
     pass_c: dict[str, int] = {s["visual_id"]: 0 for s in unique_syms}
-    tile_passes: list[dict[str, int]] = []
     if unique_syms:
-        _c_key    = f"pass_c_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
-        _c_key    = f"pass_c_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
+        _c_key    = f"pass_c_v2_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
+        _c_key    = f"pass_c_v2_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
         _cached_c = _step_cache_get(_c_key)
         if _cached_c is not None:
             pass_c = _cached_c
@@ -1873,20 +1911,8 @@ def extract_with_images(legend_path: str, body_path: str,
         else:
             _emit({"type": "phase", "phase": "pass_C",
                    "msg": f"Pass C — {len(unique_syms)} unique symbol(s)…"})
-            print(f"\n  Pass C — {ROWS}×{COLS} tiled (unique symbols, offset 0,0.5):")
-            for r in range(ROWS):
-                for c in range(COLS):
-                    tile_num = r * COLS + c + 1
-                    try:
-                        tile_b64 = _tile_png_b64(body_path, r, c, ROWS, COLS,
-                                                 offset_x=0.0, offset_y=0.5)
-                        tile_cnt = _count_all_variants_in_tile(tile_b64, unique_syms)
-                        for vid, cnt in tile_cnt.items():
-                            pass_c[vid] += cnt
-                    except Exception as exc:
-                        print(f"    tile({r},{c}) failed: {exc}")
-                    _emit({"type": "progress",
-                           "msg": f"Pass C: {tile_num}/{ROWS*COLS} tiles"})
+            print(f"\n  Pass C — exact label search on full image ({len(unique_syms)} symbols):")
+            pass_c = _count_labels_full_image(body_b64, unique_syms)
             print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
             _step_cache_set(_c_key, pass_c)
 
