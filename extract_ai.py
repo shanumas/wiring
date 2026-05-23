@@ -30,10 +30,10 @@ from pathlib import Path
 
 _CLIENT = None        # lazy-init so import doesn't fail when key is absent
 _CLIENT_HAIKU = None  # cheaper model for counting passes
-_CLIENT_QWEN  = None  # httpx.Client for OpenRouter (Qwen pass D)
-_QWEN_KEY     = None  # OpenRouter API key (cached alongside client)
+_CLIENT_VISION  = None  # httpx.Client for OpenRouter (Vision pass D)
+_VISION_KEY     = None  # OpenRouter API key (cached alongside client)
 
-AI_CACHE_DIR = Path("ai_cache")
+AI_CACHE_DIR = Path(__file__).parent / "ai_cache"
 AI_CACHE_DIR.mkdir(exist_ok=True)
 
 def _make_anthropic():
@@ -57,15 +57,15 @@ def _client_haiku():
         _CLIENT_HAIKU = _make_anthropic()
     return _CLIENT_HAIKU
 
-def _client_qwen():
+def _client_vision():
     """
     Lazy-init a plain httpx.Client for calling OpenRouter directly.
     Returns None (instead of raising) if OPENROUTER_API_KEY is not set,
     so the rest of the pipeline degrades gracefully.
     Using httpx directly avoids openai-SDK version skew with OpenRouter.
     """
-    global _CLIENT_QWEN, _QWEN_KEY
-    if _CLIENT_QWEN is None:
+    global _CLIENT_VISION, _VISION_KEY
+    if _CLIENT_VISION is None:
         key = os.environ.get("OPENROUTER_API_KEY", "")
         if not key:
             return None
@@ -81,15 +81,15 @@ def _client_qwen():
             except ImportError:
                 import certifi
                 _ssl_ctx = certifi.where()
-            _CLIENT_QWEN = httpx.Client(
+            _CLIENT_VISION = httpx.Client(
                 verify=False,
                 follow_redirects=True,
                 timeout=90.0,
             )
-            _QWEN_KEY = key
+            _VISION_KEY = key
         except Exception:
             return None
-    return _CLIENT_QWEN
+    return _CLIENT_VISION
 
 SONNET = "claude-sonnet-4-6"
 HAIKU  = "claude-haiku-4-5-20251001"
@@ -765,16 +765,16 @@ def _count_legend_aware(b64: str, codes: list[dict]) -> dict[str, int]:
 
 def _count_one_symbol_qwen(b64: str, code: str, name: str) -> int | None:
     """
-    Pass D — count one symbol using Qwen VL via OpenRouter.
+    Pass D — count one symbol using vision model via OpenRouter.
 
-    Returns None if the Qwen client is unavailable (key not set, API error, …)
+    Returns None if the Vision client is unavailable (key not set, API error, …)
     so the caller can skip pass D without breaking the majority vote.
 
     The prompt is intentionally phrased differently from passes A/B/C so that
-    Qwen acts as a truly independent validator rather than echoing Claude's
+    Vision model acts as a truly independent validator rather than echoing Claude's
     framing.
     """
-    client = _client_qwen()
+    client = _client_vision()
     if client is None:
         return None
 
@@ -809,24 +809,24 @@ Reply with ONLY a JSON object and nothing else:
         http_resp = client.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {_QWEN_KEY}",
+                "Authorization": f"Bearer {_VISION_KEY}",
                 "Content-Type": "application/json",
             },
             json=payload,
         )
         body = http_resp.text.strip()
         if http_resp.status_code != 200 or not body:
-            print(f"  [Qwen] pass D HTTP {http_resp.status_code} for {code}, body={body[:300]!r}")
+            print(f"  [Vision] pass D HTTP {http_resp.status_code} for {code}, body={body[:300]!r}")
             return None
         data = http_resp.json()
         if "error" in data:
-            print(f"  [Qwen] pass D API error for {code}: {data['error']}")
+            print(f"  [Vision] pass D API error for {code}: {data['error']}")
             return None
         text = data["choices"][0]["message"]["content"] or ""
         result = _extract_json(text)
         return int(result.get(code, 0))
     except Exception as exc:
-        print(f"  [Qwen] pass D failed for {code}: {exc}")
+        print(f"  [Vision] pass D failed for {code}: {exc}")
         return None
 
 
@@ -1265,8 +1265,8 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
                 flag = " ⚠ MISMATCH" if ratio > 0.10 else ""
                 print(f"    {code_t}: text={tc}  vision={vc}{flag}")
 
-        # ── VISION items: 3 Claude passes + 1 Qwen pass ───────────────────────
-        qwen_available = _client_qwen() is not None
+        # ── VISION items: 3 Claude passes + 1 Vision pass ───────────────────────
+        qwen_available = _client_vision() is not None
         if qwen_available:
             print(f"  Vision pass D enabled (model: {VISION_MODEL})")
         else:
@@ -1707,17 +1707,39 @@ def _tile_b64_png(b64: str, rows: int = 2, cols: int = 2) -> list[str]:
     return tiles
 
 
+def _smart_exclusions(target: dict, all_variants: list[dict]) -> list[dict]:
+    """Return only genuinely similar symbols to exclude when counting target.
+
+    Only excludes symbols that plausibly look like target:
+      • shared visual_id prefix ≥ 4 chars  (e.g. återfjädrande_*)
+      • both are single-letter codes (A, B, C… look visually alike)
+    Avoids confusing the model with a long unrelated exclusion list.
+    """
+    tid   = target["visual_id"]
+    tcode = target["code"]
+    result = []
+    for x in all_variants:
+        if x["visual_id"] == tid:
+            continue
+        common = os.path.commonprefix([tid, x["visual_id"]])
+        if len(common) >= 4:
+            result.append(x)
+        elif len(tcode) == 1 and tcode.isalpha() and len(x["code"]) == 1 and x["code"].isalpha():
+            result.append(x)
+    return result
+
+
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
                         description: str,
                         exclude_variants: list[dict] | None = None,
                         legend_b64: str | None = None) -> int | None:
-    """Qwen pass D — count one visual variant in the body image.
+    """Vision pass D — count one visual variant in the body image.
 
-    legend_b64: optional legend image passed as a visual reference so Qwen can
+    legend_b64: optional legend image passed as a visual reference so the vision model can
     see the exact symbol shape rather than relying solely on the text description.
     Especially useful for purely graphical symbols with no standard letter code.
     """
-    client = _client_qwen()
+    client = _client_vision()
     if client is None:
         return None
 
@@ -1733,23 +1755,22 @@ def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
             f'Count ONLY "{code}" ({name}) as described above.\n'
         )
 
-    # For non-ASCII codes (⊡m, ♀Å, …) the code is an internal glyph ID, not a
-    # printed label.  Tell the model to find the visual shape from the legend instead.
-    _ascii_code = code.isascii() and code.replace("-", "").isalnum()
-    _ref_phrase = (f'labeled "{code}" ' if _ascii_code else "") + f'({name})'
+    # Code is a real printed label only when it follows letter+digit pattern (D1, F2, N1-R…).
+    # Non-ASCII glyphs (⊡m, ♀Å…) and pure-letter codes (RA, A…) are internal IDs —
+    # tell the model to find the visual shape from the legend image instead.
+    _is_label = bool(re.match(r'^[A-Za-z][0-9][A-Za-z0-9\-]*$', code))
+    _ref_phrase = (f'labeled "{code}" ' if _is_label else "") + f'({name})'
 
     if legend_b64:
-        prompt = f"""You are counting symbols in a Swedish building services floor plan.
+        prompt = f"""Swedish building services floor plan.
+IMAGE 1 = legend (FÖRKLARINGAR). IMAGE 2 = full floor plan.
 
-IMAGE 1 is the legend (FÖRKLARINGAR) that shows what each symbol looks like.
-IMAGE 2 is the floor plan body — count only real installed items, not the legend.
-
-Step 1: Find the symbol {_ref_phrase} in the legend (IMAGE 1) and note its exact visual shape.
-Step 2: Scan IMAGE 2 carefully and count every occurrence of that exact shape in the floor plan.
-  Visual appearance hint: {description}
+Count every occurrence of the symbol {_ref_phrase} in IMAGE 2.
+Do NOT count the legend entry in IMAGE 1 — only real installed items in the floor plan.
+Visual description: {description}
 {excl_block}
-After your reasoning, end with ONLY a JSON object on the last line:
-{{"{visual_id}": <integer>}}"""
+Output ONLY a JSON object — no other text:
+{{"{visual_id}": N}}"""
         content = [
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{legend_b64}"}},
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
@@ -1774,12 +1795,12 @@ Reply ONLY with a JSON object, nothing else:
     try:
         payload = {
             "model": VISION_MODEL,
-            "max_tokens": 512,
+            "max_tokens": 1024,
             "messages": [{"role": "user", "content": content}],
         }
-        http_resp = _CLIENT_QWEN.post(
+        http_resp = _CLIENT_VISION.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {_QWEN_KEY}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {_VISION_KEY}", "Content-Type": "application/json"},
             json=payload,
         )
         body_text = http_resp.text.strip()
@@ -1795,7 +1816,7 @@ Reply ONLY with a JSON object, nothing else:
         result = _extract_json(text)
         return int(result.get(visual_id, 0))
     except Exception as exc:
-        print(f"  [Qwen] failed for {visual_id}: {exc}")
+        print(f"  [Vision] failed for {visual_id}: {exc}")
         return None
 
 
@@ -1851,7 +1872,7 @@ def extract_with_images(legend_path: str, body_path: str,
 
     Step 1 — legend.png → Claude identifies all visual symbol variants.
               Two "A" symbols with different shapes become "A_v1" and "A_v2".
-    Step 2 — body.png → count each variant (3 Claude passes + optional Qwen).
+    Step 2 — body.png → count each variant (3 Claude passes + optional Vision).
     Step 3 — body.png → estimate lengths for line-installed items.
     """
     def _emit(event):
@@ -1932,7 +1953,7 @@ def extract_with_images(legend_path: str, body_path: str,
     length_syms = length_syms + extra_length_items
 
     # ── Step 2: count each visual variant ────────────────────────────────────
-    qwen_ok = _client_qwen() is not None
+    qwen_ok = _client_vision() is not None
     print(f"  [AI] Vision pass D {'enabled' if qwen_ok else 'disabled'} (model: {VISION_MODEL})")
 
     counts: dict[str, dict] = {}
@@ -1981,11 +2002,11 @@ def extract_with_images(legend_path: str, body_path: str,
             else:
                 print(f"\n  Pass C — image text search ({len(unique_syms)} symbols):")
                 pass_c = _count_labels_full_image(body_b64, unique_syms)
-                # Qwen vision fallback for zero-count symbols when no PDF available
+                # Vision fallback for zero-count symbols when no PDF available
                 if qwen_ok:
                     zero_syms = [s for s in unique_syms if pass_c.get(s["visual_id"], 0) == 0]
                     if zero_syms:
-                        print(f"    Qwen fallback for {len(zero_syms)} zero-count symbol(s):")
+                        print(f"    Vision fallback for {len(zero_syms)} zero-count symbol(s):")
                         for sym in zero_syms:
                             vid = sym["visual_id"]
                             _fb_key = f"pass_d_fb_{_body_hash}_{hashlib.sha1(vid.encode()).hexdigest()[:8]}"
@@ -1997,19 +2018,19 @@ def extract_with_images(legend_path: str, body_path: str,
                                                          sym.get("description", sym["name"]),
                                                          legend_b64=legend_b64)
                                 _step_cache_set(_fb_key, {"count": fb})
-                            print(f"      {vid}: text=0 → Qwen={fb}")
+                            print(f"      {vid}: text=0 → Vision={fb}")
                             if fb:
                                 pass_c[vid] = fb
             print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
             _step_cache_set(_c_key, pass_c)
 
-    # ── Pass D: variant symbols — Qwen full-image, one call per symbol ───────
+    # ── Pass D: variant symbols — Vision full-image, one call per symbol ───────
     pass_d: dict[str, int | None] = {s["visual_id"]: None for s in variant_syms}
     if variant_syms:
         if qwen_ok:
             _emit({"type": "phase", "phase": "pass_D",
-                   "msg": f"Pass D — Qwen: {len(variant_syms)} variant(s)…"})
-            print(f"\n  Pass D — Qwen full-image (variant symbols):")
+                   "msg": f"Pass D — Vision: {len(variant_syms)} variant(s)…"})
+            print(f"\n  Pass D — Vision full-image (variant symbols):")
             for sym in variant_syms:
                 vid     = sym["visual_id"]
                 _model_slug = hashlib.sha1(VISION_MODEL.encode()).hexdigest()[:6]
@@ -2019,25 +2040,12 @@ def extract_with_images(legend_path: str, body_path: str,
                     pass_d[vid] = _cached_d.get("count")
                     print(f"    {vid}: {pass_d[vid]} (cached)")
                 else:
-                    excl   = [x for x in variant_syms if x["visual_id"] != vid]
+                    excl   = _smart_exclusions(sym, variant_syms)
                     d_v    = _count_variant_qwen(body_b64, vid, sym["code"],
                                                  sym["name"],
                                                  sym.get("description", sym["name"]),
                                                  exclude_variants=excl,
                                                  legend_b64=legend_b64)
-                    # If full-image returned 0, retry with 2×2 tiles so small or
-                    # rare symbols are seen at higher effective resolution.
-                    if not d_v:
-                        print(f"    {vid}: full-image=0, trying 2×2 tiles…")
-                        tile_total = 0
-                        for t_b64 in _tile_b64_png(body_b64, rows=2, cols=2):
-                            t_cnt = _count_variant_qwen(t_b64, vid, sym["code"],
-                                                        sym["name"],
-                                                        sym.get("description", sym["name"]),
-                                                        legend_b64=legend_b64)
-                            if t_cnt:
-                                tile_total += t_cnt
-                        d_v = tile_total or d_v
                     pass_d[vid] = d_v
                     _step_cache_set(_d_key, {"count": d_v})
                     print(f"    {vid}: {d_v if d_v is not None else '—'}")
@@ -2268,7 +2276,7 @@ def _normalise(raw: dict, page_w: float, page_h: float) -> dict:
             #              confidence   = based on text/vision agreement
             #              count_grid_a/b/c/d are NOT independent validators → stored as null.
             #
-            #   "vision" — majority vote of 3 Claude passes + optional Qwen pass D.
+            #   "vision" — majority vote of 3 Claude passes + optional Vision pass D.
             #              count_grid_a/b/c/d = independent visual counts
             #              confidence   = based on vote agreement
             #              count_text/count_vision are null.
