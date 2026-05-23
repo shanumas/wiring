@@ -60,13 +60,15 @@ def _check_keys() -> None:
         except Exception as exc:
             errors.append(f"ANTHROPIC_API_KEY check failed: {exc}")
 
-    # ── 2. OpenRouter / Qwen (required if key is set) ────────────────────────
+    # ── 2. OpenRouter / Vision pass D (required if key is set) ──────────────
     # We do a real model call (tiny 1×1 PNG) so startup fails fast if the
     # model is unavailable, quota-exceeded, or misconfigured.
     or_key = os.environ.get("OPENROUTER_API_KEY", "")
-    qwen_model = os.environ.get("QWEN_MODEL", "qwen/qwen2.5-vl-72b-instruct")
+    vision_model = (os.environ.get("VISION_MODEL")
+                    or os.environ.get("QWEN_MODEL")
+                    or "google/gemini-3.5-flash")
     if not or_key:
-        print("  ⚠ OPENROUTER_API_KEY not set — Qwen pass D will be disabled.")
+        print("  ⚠ OPENROUTER_API_KEY not set — Vision pass D will be disabled.")
     else:
         try:
             import ssl as _ssl
@@ -81,48 +83,39 @@ def _check_keys() -> None:
 
             _http = _httpx.Client(verify=_ssl_ctx, follow_redirects=True, timeout=60.0)
 
-            # 16×16 white PNG — small but meets provider minimum size requirements.
-            _TINY_PNG = (
-                "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAGElEQVQ4jWNg"
-                "YGD4z8BQDwAAAP//AwAI/AL+hc2rNAAAAABJRU5ErkJggg=="
-            )
             _probe = _http.post(
                 "https://openrouter.ai/api/v1/chat/completions",
                 headers={"Authorization": f"Bearer {or_key}", "Content-Type": "application/json"},
                 json={
-                    "model": qwen_model,
+                    "model": vision_model,
                     "max_tokens": 5,
                     "messages": [{
                         "role": "user",
-                        "content": [
-                            {"type": "image_url",
-                             "image_url": {"url": f"data:image/png;base64,{_TINY_PNG}"}},
-                            {"type": "text", "text": "Reply with the single word OK."},
-                        ],
+                        "content": "Reply with the single word OK.",
                     }],
                 },
             )
             _body = _probe.text.strip()
             if _probe.status_code != 200:
                 errors.append(
-                    f"Qwen model probe failed: HTTP {_probe.status_code}. Body: {_body[:300]!r}"
+                    f"Vision model probe failed: HTTP {_probe.status_code}. Body: {_body[:300]!r}"
                 )
             elif not _body:
                 errors.append(
-                    f"Qwen model probe failed: HTTP 200 but empty response body "
-                    f"(model={qwen_model!r}). Check OpenRouter credits / model availability."
+                    f"Vision model probe failed: HTTP 200 but empty response body "
+                    f"(model={vision_model!r}). Check OpenRouter credits / model availability."
                 )
             else:
                 _data = _json.loads(_body)
                 if "error" in _data:
-                    errors.append(f"Qwen model probe error: {_data['error']}")
+                    errors.append(f"Vision model probe error: {_data['error']}")
                 else:
                     _reply = _data["choices"][0]["message"]["content"]
-                    print(f"  ✓ Qwen pass D — model {qwen_model!r} responded: {_reply!r}")
+                    print(f"  ✓ Vision pass D — model {vision_model!r} responded: {_reply!r}")
         except _httpx.ConnectError as exc:
-            errors.append(f"Qwen model probe: cannot reach openrouter.ai — {exc}")
+            errors.append(f"Vision model probe: cannot reach openrouter.ai — {exc}")
         except Exception as exc:
-            errors.append(f"Qwen model probe failed: {exc}")
+            errors.append(f"Vision model probe failed: {exc}")
 
     if errors:
         print("\n" + "─" * 60)
