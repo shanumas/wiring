@@ -1945,7 +1945,10 @@ def extract_with_images(legend_path: str, body_path: str,
     # (hyphens allowed).  Codes with non-ASCII glyphs (⊡m, ♀Å, ⊙HOA, ⊏UT, …)
     # are graphical symbols — they have no matching text label in the floor plan.
     # Single-letter codes (A, B, …) are too ambiguous (appear in annotations etc.).
-    _PDF_SEARCHABLE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9\-]{1,}$')
+    # Valid text-search codes follow letter+digit pattern (D1, F2, N1-R, P11, T1a…).
+    # Pure-letter codes like "RA" are legend-parser artifacts (misread glyphs) and
+    # won't appear as text labels in the floor plan — route them to vision instead.
+    _PDF_SEARCHABLE = re.compile(r'^[A-Za-z][0-9][A-Za-z0-9\-]*$')
     unique_syms  = [s for s in count_syms
                     if _code_freq[s["code"]] == 1 and _PDF_SEARCHABLE.match(s["code"])]
     variant_syms = [s for s in count_syms
