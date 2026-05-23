@@ -11,7 +11,8 @@
       "Bash(Get-ChildItem \"D:\\\\wiring\\\\ai_cache\" -Filter \"step_pass_d*.json\")",
       "Bash(Sort-Object LastWriteTime -Descending)",
       "Bash(Select-Object Name, LastWriteTime)",
-      "Bash(sort -k6,7)"
+      "Bash(sort -k6,7)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")"
     ]
   }
 }

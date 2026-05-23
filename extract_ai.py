@@ -2034,13 +2034,13 @@ def extract_with_images(legend_path: str, body_path: str,
     from collections import Counter as _Counter
     _code_freq = _Counter(s["code"] for s in count_syms)
 
-    # A code is text-searchable only if it is 2+ plain ASCII alphanumeric chars
-    # (hyphens allowed).  Codes with non-ASCII glyphs (⊡m, ♀Å, ⊙HOA, ⊏UT, …)
-    # are graphical symbols — they have no matching text label in the floor plan.
-    # Single-letter codes (A, B, …) are too ambiguous (appear in annotations etc.).
-    # Valid text-search codes follow letter+digit pattern (D1, F2, N1-R, P11, T1a…).
-    # Pure-letter codes like "RA" are legend-parser artifacts (misread glyphs) and
-    # won't appear as text labels in the floor plan — route them to vision instead.
+    # A code is text-searchable if it is 2+ plain ASCII alphanumeric chars (hyphens
+    # allowed) and not a single letter (too ambiguous — appears in annotations etc.).
+    # Codes with non-ASCII glyphs (⊡m, ♀Å, ⊙, …) are graphical-only symbols.
+    # Pure-letter codes like "UT", "OT", "HOA" are real codes that appear as text
+    # labels in the floor plan and are handled here.  Legend-parser artifacts (e.g.
+    # "RA" misread from a glyph) have code_freq > 1 or non-ASCII, so they are still
+    # routed to vision via the code_freq check above.
     _PDF_SEARCHABLE = re.compile(r'^[A-Za-z][0-9][A-Za-z0-9\-]*$')
     unique_syms  = [s for s in count_syms
                     if _code_freq[s["code"]] == 1 and _PDF_SEARCHABLE.match(s["code"])]
@@ -2055,6 +2055,7 @@ def extract_with_images(legend_path: str, body_path: str,
     _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
     _pdf_ok = drawing_pdf_path and Path(drawing_pdf_path).exists()
     _c_src  = "pdf" if _pdf_ok else "image"
+
     pass_c: dict[str, int] = {s["visual_id"]: 0 for s in unique_syms}
     if unique_syms:
         _c_key    = f"pass_c_v6_{_c_src}_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
