@@ -1909,9 +1909,17 @@ def extract_with_images(legend_path: str, body_path: str,
 
     # ── Classify: unique-letter vs variant (same code, multiple visuals) ─────
     from collections import Counter as _Counter
-    _code_freq   = _Counter(s["code"] for s in count_syms)
-    unique_syms  = [s for s in count_syms if _code_freq[s["code"]] == 1]
-    variant_syms = [s for s in count_syms if _code_freq[s["code"]] > 1]
+    _code_freq = _Counter(s["code"] for s in count_syms)
+
+    # A code is text-searchable only if it is 2+ plain ASCII alphanumeric chars
+    # (hyphens allowed).  Codes with non-ASCII glyphs (⊡m, ♀Å, ⊙HOA, ⊏UT, …)
+    # are graphical symbols — they have no matching text label in the floor plan.
+    # Single-letter codes (A, B, …) are too ambiguous (appear in annotations etc.).
+    _PDF_SEARCHABLE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9\-]{1,}$')
+    unique_syms  = [s for s in count_syms
+                    if _code_freq[s["code"]] == 1 and _PDF_SEARCHABLE.match(s["code"])]
+    variant_syms = [s for s in count_syms
+                    if _code_freq[s["code"]] > 1  or  not _PDF_SEARCHABLE.match(s["code"])]
     print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
     print(f"  [AI] code_freq: { dict(_code_freq) }")
     print(f"  [AI] unique → { [s['visual_id'] for s in unique_syms] }")

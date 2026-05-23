@@ -180,18 +180,32 @@
     }
     #comp-list { }
 
-    /* ── hide-zeros bar ── */
+    /* ── filter bar ── */
     #hide-zeros-bar {
       display: none;
       align-items: center;
-      gap: 6px;
-      padding: 5px 14px;
+      gap: 4px;
+      padding: 5px 10px;
       background: #f4f6fa;
       border-bottom: 1px solid #e0e0e0;
       font-size: 10px;
-      color: #555;
     }
-    #hide-zeros-bar label { display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none; }
+    #hide-zeros-bar span { color:#888; margin-right:2px; }
+    .zero-filter-btn {
+      padding: 2px 8px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 10px;
+      color: #555;
+      transition: background .15s, color .15s;
+    }
+    .zero-filter-btn.active {
+      background: #2471a3;
+      color: #fff;
+      border-color: #2471a3;
+    }
 
     /* ── streaming activity log (Claude Code style) ── */
     #stream-phase-bar {
@@ -729,10 +743,10 @@
     </div>
     <div id="comp-panel" class="sidebar-panel active">
       <div id="hide-zeros-bar">
-        <label>
-          <input type="checkbox" id="hide-zeros-chk" checked>
-          Hide zero-count items
-        </label>
+        <span>Show:</span>
+        <button class="zero-filter-btn" data-filter="all">All</button>
+        <button class="zero-filter-btn active" data-filter="hide">Hide zeros</button>
+        <button class="zero-filter-btn" data-filter="only">Zeros only</button>
       </div>
       <div id="comp-list"></div>
     </div>
@@ -752,16 +766,19 @@
   let currentDrawing = null;
   let currentDrawingType = 'unknown';
   let extractionMode = 'ai';   // 'text' | 'vector' | 'ai'
-  let hideZeros = true;
+  let zeroFilter = 'hide'; // 'all' | 'hide' | 'only'
 
   function applyHideZeros() {
     document.querySelectorAll('#comp-list .comp-row[data-count]').forEach(row => {
       const cnt = parseFloat(row.dataset.count ?? '1');
-      if (hideZeros && cnt === 0) {
+      const isZero = cnt === 0;
+      if (zeroFilter === 'hide' && isZero) {
+        row.style.display = 'none';
+      } else if (zeroFilter === 'only' && !isZero) {
         row.style.display = 'none';
       } else {
         row.style.display = '';
-        row.style.opacity = cnt === 0 ? '0.45' : '';
+        row.style.opacity = (zeroFilter === 'all' && isZero) ? '0.45' : '';
       }
     });
   }
@@ -942,8 +959,9 @@
       rowsDiv.appendChild(row);
     }
     row.dataset.count = count;
-    row.style.display = (hideZeros && count === 0) ? 'none' : '';
-    row.style.opacity = (!hideZeros && count === 0) ? '0.45' : '';
+    const _isZero = count === 0;
+    row.style.display = (zeroFilter === 'hide' && _isZero) || (zeroFilter === 'only' && !_isZero) ? 'none' : '';
+    row.style.opacity = (zeroFilter === 'all' && _isZero) ? '0.45' : '';
 
     row.innerHTML = `
       <div class="comp-code" style="color:#1c2b4a">${sym.code}</div>
@@ -1179,9 +1197,13 @@
     });
   });
 
-  document.getElementById('hide-zeros-chk').addEventListener('change', e => {
-    hideZeros = e.target.checked;
-    applyHideZeros();
+  document.querySelectorAll('.zero-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      zeroFilter = btn.dataset.filter;
+      document.querySelectorAll('.zero-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyHideZeros();
+    });
   });
 
   // Init bar visibility (default mode is 'ai')
