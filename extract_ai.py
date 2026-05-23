@@ -2098,6 +2098,16 @@ def extract_with_images(legend_path: str, body_path: str,
             print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
             _step_cache_set(_c_key, pass_c)
 
+    # Emit unique symbols as soon as Pass C is available — don't wait for Pass D
+    for sym in unique_syms:
+        vid = sym["visual_id"]
+        cnt = pass_c.get(vid, 0)
+        _emit({
+            "type": "symbol", "visual_id": vid,
+            "code": sym["code"], "name": sym.get("name", sym["code"]),
+            "count": cnt, "confidence": "high", "c": cnt, "d": None,
+        })
+
     # ── Pass D: variant symbols — Vision full-image ──────────────────────────
     # Symbols that share a visual_id prefix ≥ 4 chars (e.g. återfjädrande_*)
     # look nearly identical on the drawing.  Counting them in separate calls
@@ -2137,6 +2147,14 @@ def extract_with_images(legend_path: str, body_path: str,
                         vid = sym["visual_id"]
                         pass_d[vid] = _cached_d.get(vid)
                         print(f"    {vid}: {pass_d[vid]} (cached)")
+                        d = pass_d[vid]
+                        _emit({
+                            "type": "symbol", "visual_id": vid,
+                            "code": sym["code"], "name": sym.get("name", sym["code"]),
+                            "count": d or 0,
+                            "confidence": "high" if d is not None else "low",
+                            "c": None, "d": d,
+                        })
                 elif len(fam) == 1:
                     sym = fam[0]
                     vid = sym["visual_id"]
@@ -2147,6 +2165,13 @@ def extract_with_images(legend_path: str, body_path: str,
                     pass_d[vid] = d_v
                     _step_cache_set(_d_key, {vid: d_v})
                     print(f"    {vid}: {d_v if d_v is not None else '—'}")
+                    _emit({
+                        "type": "symbol", "visual_id": vid,
+                        "code": sym["code"], "name": sym.get("name", sym["code"]),
+                        "count": d_v or 0,
+                        "confidence": "high" if d_v is not None else "low",
+                        "c": None, "d": d_v,
+                    })
                 else:
                     # Joint call for the whole family
                     vids_str = ", ".join(s["visual_id"] for s in fam)
@@ -2157,6 +2182,14 @@ def extract_with_images(legend_path: str, body_path: str,
                         vid = sym["visual_id"]
                         pass_d[vid] = results.get(vid)
                         print(f"    {vid}: {pass_d[vid]}")
+                        d = pass_d[vid]
+                        _emit({
+                            "type": "symbol", "visual_id": vid,
+                            "code": sym["code"], "name": sym.get("name", sym["code"]),
+                            "count": d or 0,
+                            "confidence": "high" if d is not None else "low",
+                            "c": None, "d": d,
+                        })
         else:
             print(f"\n  Pass D skipped — OPENROUTER_API_KEY not set")
 
@@ -2184,16 +2217,15 @@ def extract_with_images(legend_path: str, body_path: str,
             "final":      final,
             "confidence": conf,
         }
-        _emit({
-            "type":       "symbol",
-            "visual_id":  vid,
-            "code":       sym["code"],
-            "name":       sym.get("name", sym["code"]),
-            "count":      final,
-            "confidence": conf,
-            "c":          pass_c.get(vid) if is_unique  else None,
-            "d":          pass_d.get(vid) if not is_unique else None,
-        })
+        # Emit variant symbols only when Pass D was skipped (no vision key)
+        # — they are already emitted inline during Pass D otherwise
+        if not is_unique and not qwen_ok:
+            _emit({
+                "type": "symbol", "visual_id": vid,
+                "code": sym["code"], "name": sym.get("name", sym["code"]),
+                "count": final, "confidence": conf,
+                "c": None, "d": None,
+            })
 
     # ── Extra library items: Pass C text search (unique codes from description) ─
     if extra_count_items:
