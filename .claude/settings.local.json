@@ -6,7 +6,8 @@
       "Bash(pip install *)",
       "WebFetch(domain:openrouter.ai)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "PowerShell(Get-ChildItem \"D:\\\\wiring\\\\ai_cache\" | Where-Object { $_.Name -match \"pass_d\" } | Select-Object Name)"
     ]
   }
 }

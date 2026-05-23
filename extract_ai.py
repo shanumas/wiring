@@ -1729,6 +1729,79 @@ def _smart_exclusions(target: dict, all_variants: list[dict]) -> list[dict]:
     return result
 
 
+def _count_family_vision(body_b64: str, variants: list[dict],
+                         legend_b64: str | None = None) -> dict[str, int | None]:
+    """Count multiple visually similar variants in ONE joint call.
+
+    Asking the model to classify every instance into one of N categories in a
+    single pass avoids the double-counting and confusion that occurs when the
+    same similar-looking symbol is counted in N separate calls.
+    """
+    client = _client_vision()
+    if client is None:
+        return {v["visual_id"]: None for v in variants}
+
+    items = "\n".join(
+        f'  "{v["visual_id"]}" — {v["name"]}: {v.get("description", v["name"])}'
+        for v in variants
+    )
+    ids_template = ", ".join(f'"{v["visual_id"]}": N' for v in variants)
+
+    if legend_b64:
+        prompt = f"""Swedish building services floor plan.
+IMAGE 1 = legend (FÖRKLARINGAR). IMAGE 2 = full floor plan.
+
+These symbols look similar but have subtle visual differences. Use IMAGE 1 (legend) to identify
+the exact shape of each variant, then count each one separately in IMAGE 2.
+
+Variants to count:
+{items}
+
+Output ONLY this JSON — no other text:
+{{{ids_template}}}"""
+        content = [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{legend_b64}"}},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        prompt = f"""Count each of these symbols in the floor plan:
+{items}
+Output ONLY: {{{ids_template}}}"""
+        content = [
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
+            {"type": "text", "text": prompt},
+        ]
+
+    try:
+        payload = {
+            "model": VISION_MODEL,
+            "max_tokens": 4096,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": content}],
+        }
+        http_resp = _CLIENT_VISION.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {_VISION_KEY}", "Content-Type": "application/json"},
+            json=payload,
+        )
+        body_text = http_resp.text.strip()
+        if http_resp.status_code != 200 or not body_text:
+            print(f"  [Vision] family HTTP {http_resp.status_code}: {body_text[:200]}")
+            return {v["visual_id"]: None for v in variants}
+        data = http_resp.json()
+        if "error" in data:
+            print(f"  [Vision] family error: {data['error']}")
+            return {v["visual_id"]: None for v in variants}
+        text = data["choices"][0]["message"]["content"] or ""
+        print(f"    [vision raw] family {[v['visual_id'] for v in variants]}: {text[:300]}")
+        result = _extract_json(text)
+        return {v["visual_id"]: int(result.get(v["visual_id"], 0)) for v in variants}
+    except Exception as exc:
+        print(f"  [Vision] family count failed: {exc}")
+        return {v["visual_id"]: None for v in variants}
+
+
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
                         description: str,
                         exclude_variants: list[dict] | None = None,
@@ -1795,7 +1868,8 @@ Reply ONLY with a JSON object, nothing else:
     try:
         payload = {
             "model": VISION_MODEL,
-            "max_tokens": 1024,
+            "max_tokens": 4096,
+            "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": content}],
         }
         http_resp = _CLIENT_VISION.post(
@@ -2024,31 +2098,65 @@ def extract_with_images(legend_path: str, body_path: str,
             print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
             _step_cache_set(_c_key, pass_c)
 
-    # ── Pass D: variant symbols — Vision full-image, one call per symbol ───────
+    # ── Pass D: variant symbols — Vision full-image ──────────────────────────
+    # Symbols that share a visual_id prefix ≥ 4 chars (e.g. återfjädrande_*)
+    # look nearly identical on the drawing.  Counting them in separate calls
+    # leads to confusion and double-counting.  Instead, group such families and
+    # count all members in one joint call so the model can classify each
+    # instance into exactly one category.
     pass_d: dict[str, int | None] = {s["visual_id"]: None for s in variant_syms}
     if variant_syms:
         if qwen_ok:
             _emit({"type": "phase", "phase": "pass_D",
                    "msg": f"Pass D — Vision: {len(variant_syms)} variant(s)…"})
             print(f"\n  Pass D — Vision full-image (variant symbols):")
+            _model_slug = hashlib.sha1(VISION_MODEL.encode()).hexdigest()[:6]
+
+            # Group into families: symbols whose visual_id shares a ≥4-char prefix
+            _families: list[list[dict]] = []
             for sym in variant_syms:
-                vid     = sym["visual_id"]
-                _model_slug = hashlib.sha1(VISION_MODEL.encode()).hexdigest()[:6]
-                _d_key  = f"pass_d_{_model_slug}_{_body_hash}_{hashlib.sha1(vid.encode()).hexdigest()[:8]}"
+                placed = False
+                for fam in _families:
+                    if len(os.path.commonprefix([sym["visual_id"], fam[0]["visual_id"]])) >= 3:
+                        fam.append(sym)
+                        placed = True
+                        break
+                if not placed:
+                    _families.append([sym])
+
+            for fam in _families:
+                # Build a cache key that covers all members of the family
+                _fam_hash = hashlib.sha1(
+                    "|".join(sorted(s["visual_id"] for s in fam)).encode()
+                ).hexdigest()[:12]
+                _d_key = f"pass_d_{_model_slug}_{_body_hash}_{_fam_hash}"
                 _cached_d = _step_cache_get(_d_key)
+
                 if _cached_d is not None:
-                    pass_d[vid] = _cached_d.get("count")
-                    print(f"    {vid}: {pass_d[vid]} (cached)")
-                else:
-                    excl   = _smart_exclusions(sym, variant_syms)
-                    d_v    = _count_variant_qwen(body_b64, vid, sym["code"],
-                                                 sym["name"],
-                                                 sym.get("description", sym["name"]),
-                                                 exclude_variants=excl,
-                                                 legend_b64=legend_b64)
+                    for sym in fam:
+                        vid = sym["visual_id"]
+                        pass_d[vid] = _cached_d.get(vid)
+                        print(f"    {vid}: {pass_d[vid]} (cached)")
+                elif len(fam) == 1:
+                    sym = fam[0]
+                    vid = sym["visual_id"]
+                    d_v = _count_variant_qwen(body_b64, vid, sym["code"],
+                                              sym["name"],
+                                              sym.get("description", sym["name"]),
+                                              legend_b64=legend_b64)
                     pass_d[vid] = d_v
-                    _step_cache_set(_d_key, {"count": d_v})
+                    _step_cache_set(_d_key, {vid: d_v})
                     print(f"    {vid}: {d_v if d_v is not None else '—'}")
+                else:
+                    # Joint call for the whole family
+                    vids_str = ", ".join(s["visual_id"] for s in fam)
+                    print(f"    [family] counting jointly: {vids_str}")
+                    results = _count_family_vision(body_b64, fam, legend_b64)
+                    _step_cache_set(_d_key, {v: results.get(v) for v in results})
+                    for sym in fam:
+                        vid = sym["visual_id"]
+                        pass_d[vid] = results.get(vid)
+                        print(f"    {vid}: {pass_d[vid]}")
         else:
             print(f"\n  Pass D skipped — OPENROUTER_API_KEY not set")
 
