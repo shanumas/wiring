@@ -211,7 +211,7 @@
       "notes": "LED 2,6W vid läsavstånd 30m, IP40, Polykarbonat PMMA, 2x2,5mm², Centralmatad övervakad, Tak pendlas höjd med dörrfoder, Piktogram ner Art.nr 771519, Piktogram HCP pil ner Art.nr 772207, Art.nr 7053640"
     },
     {
-      "code": "N1R",
+      "code": "N1-R",
       "name": "Nödljusarmatur/hänvisningsarmatur med rullstolspiktogram – Malux Guideled cg-s / Emergency exit sign with wheelchair pictogram – Malux Guideled cg-s",
       "measurement_type": "count",
       "unit": "pcs",
@@ -232,7 +232,7 @@
       "notes": "LED 2,6W vid läsavstånd 30m, IP40, Polykarbonat PMMA, 2x2,5mm², Centralmatad övervakad, Tak pendlas höjd med dörrfoder, Piktogram pil vänster Art.nr 7053500, Piktogram HCP pil vänster HCP höger Art.nr 772209, Art.nr 7053640"
     },
     {
-      "code": "N3R",
+      "code": "N3-R",
       "name": "Nödljusarmatur/hänvisningsarmatur med rullstolspiktogram pil vänster – Malux Guideled cg-s / Emergency exit sign wheelchair arrow left – Malux Guideled cg-s",
       "measurement_type": "count",
       "unit": "pcs",

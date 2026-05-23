@@ -300,7 +300,8 @@ def _run_ai(pdf_path: Path) -> None:
     try:
         if LEGEND_IMG.exists() and BODY_IMG.exists():
             print(f"  [AI] using pre-split images (images/legend.png + images/body.png)")
-            ai_comp = extract_with_images(str(LEGEND_IMG), str(BODY_IMG), _component_library)
+            ai_comp = extract_with_images(str(LEGEND_IMG), str(BODY_IMG), _component_library,
+                                          drawing_pdf_path=str(pdf_path))
         else:
             ai_comp = extract_with_ai(str(pdf_path), _component_library)
         ai_est  = _estimate_ai(ai_comp)
@@ -473,7 +474,8 @@ async def drawing_run_ai_stream(name: str, force: bool = False):
         try:
             if LEGEND_IMG.exists() and BODY_IMG.exists():
                 ai_comp = extract_with_images(
-                    str(LEGEND_IMG), str(BODY_IMG), _component_library, progress_cb=_cb)
+                    str(LEGEND_IMG), str(BODY_IMG), _component_library,
+                    drawing_pdf_path=str(PDF_DIR / name), progress_cb=_cb)
             else:
                 ai_comp = extract_with_ai(str(PDF_DIR / name), _component_library)
             ai_est = _estimate_ai(ai_comp)

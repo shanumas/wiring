@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(SSL_CERT_FILE=$\\(python -c \"import certifi; print\\(certifi.where\\(\\)\\)\"\\) python run_tests.py --no-cache)",
+      "Bash(pip install *)"
     ]
   }
 }

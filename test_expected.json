@@ -1,20 +1,31 @@
 {
   "drawing": {
     "legend": "images/legend.png",
-    "body":   "images/body.png"
+    "body":   "images/body.png",
+    "pdf":    "pdf/drawing.pdf"
   },
   "expected": [
-    {"code": "F1",   "count": 15, "method": "text"},
-    {"code": "F2",   "count": 10, "method": "text"},
-    {"code": "F5",   "count": 3,  "method": "text"},
-    {"code": "N1",   "count": 2,  "method": "text"},
-    {"code": "N1-R", "count": 5,  "method": "text"},
+
+    {"code": "T1a",  "count": 2,  "method": "text"},
+    {"code": "T2",   "count": 2,  "method": "text"},
+    {"code": "T4",   "count": 4,  "method": "text"},
+    {"code": "I10",  "count": 8,  "method": "text"},
     {"code": "P11",  "count": 27, "method": "text"},
     {"code": "P12",  "count": 6,  "method": "text"},
-    {"code": "T2",   "count": 2,  "method": "text"},
-    {"code": "T4",   "count": 5,  "method": "text"},
-    {"code": "I10",  "count": 6,  "method": "text"},
     {"code": "V17",  "count": 2,  "method": "text"},
-    {"code": "V18",  "count": 1,  "method": "text"}
+    {"code": "V18",  "count": 1,  "method": "text"},
+    {"code": "N1",  "count": 2,  "method": "text"},
+    {"code": "N1-R",  "count": 5,  "method": "text"},
+    {"code": "N6",  "count": 1,  "method": "text"},
+
+    {"code": "D1",   "count": 3, "method": "text"},
+    {"code": "D2",   "count": 3, "method": "text"},
+    {"code": "D4",   "count": 1, "method": "text"},
+    {"code": "D5",   "count": 1, "method": "text"},
+    {"code": "F1",   "count": 15, "method": "text"},
+    {"code": "F2",   "count": 10, "method": "text"},
+    {"code": "F5",   "count": 3,  "method": "text"}
+
+   
   ]
 }

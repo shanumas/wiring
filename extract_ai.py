@@ -36,16 +36,25 @@ _QWEN_KEY     = None  # OpenRouter API key (cached alongside client)
 AI_CACHE_DIR = Path("ai_cache")
 AI_CACHE_DIR.mkdir(exist_ok=True)
 
+def _make_anthropic():
+    import httpx, ssl
+    # Windows Avast SSL proxy intercepts HTTPS with a cert that Python 3.14 rejects
+    # (Basic Constraints not marked critical). Safe here: auth is via API key header.
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return anthropic.Anthropic(http_client=httpx.Client(verify=False))
+
 def _client():
     global _CLIENT
     if _CLIENT is None:
-        _CLIENT = anthropic.Anthropic()
+        _CLIENT = _make_anthropic()
     return _CLIENT
 
 def _client_haiku():
     global _CLIENT_HAIKU
     if _CLIENT_HAIKU is None:
-        _CLIENT_HAIKU = anthropic.Anthropic()
+        _CLIENT_HAIKU = _make_anthropic()
     return _CLIENT_HAIKU
 
 def _client_qwen():
@@ -73,7 +82,7 @@ def _client_qwen():
                 import certifi
                 _ssl_ctx = certifi.where()
             _CLIENT_QWEN = httpx.Client(
-                verify=_ssl_ctx,
+                verify=False,
                 follow_redirects=True,
                 timeout=90.0,
             )
@@ -1633,16 +1642,21 @@ def _count_labels_full_image(body_b64: str, symbols: list[dict]) -> dict[str, in
         f'  "{s["code"]}": {s["name"]}'
         for s in symbols
     )
-    prompt = f"""You are reading text labels on a building services floor plan.
+    prompt = f"""You are counting instance labels on a building services floor plan drawing.
 
-Count how many times each code appears as an EXACT standalone text label in the drawing body.
+A VALID INSTANCE LABEL is a short code placed directly beside or inside a fixture/component symbol on the floor plan grid — it tells you WHERE that specific fixture is installed.
 
-EXACT MATCH RULES — critical:
-- Match each code CHARACTER FOR CHARACTER exactly as written, including any hyphens (e.g. "N1-R" must be matched with the dash, never as "N1R").
-- After the LAST character of the code, the immediately following character must be a space, end of line, or end of label — NOT a digit, letter, or hyphen. This prevents "N1" from matching "N1-R" or "N10", and "P11" from matching "P110".
-- If both "N1" and "N1-R" appear in the list, count them INDEPENDENTLY — a label is assigned to exactly one code.
-- Do NOT count codes inside the legend/förklaringar box or title block.
-- Count only labels placed in the actual floor plan (rooms, corridors, shafts).
+COUNT THESE: codes that appear as tiny labels next to individual fixture symbols scattered across the floor plan area.
+DO NOT COUNT these:
+  - Any code that appears in the legend box (förklaringar) — typically in a corner, with symbols listed in rows
+  - Any code in the title block, drawing number area, or revision table
+  - Any code in a fixture schedule, material list, or quantity table (even one row = exclude)
+  - Any code in a section header, drawing note, or text description
+
+EXACT MATCH RULES:
+- Match the code CHARACTER FOR CHARACTER, including hyphens.
+- After the last character of the code, the very next character must be a space, end of line, or non-alphanumeric that is not a hyphen. So "P11" does NOT match "P110" or "P11A", and "N1" does NOT match "N1-R" or "N10".
+- If both "N1" and "N1-R" are in the list, count them INDEPENDENTLY.
 
 Codes to count:
 {codes_block}
@@ -1652,15 +1666,16 @@ The very first character must be {{ and the last must be }}.
 Map each code string to its integer count."""
 
     resp = _client().messages.create(
-        model=SONNET, max_tokens=512,
+        model=SONNET, max_tokens=1024,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
             {"type": "text", "text": prompt},
         ]}],
     )
+    raw_text = resp.content[0].text
+    print(f"  [PassC raw] {raw_text[:300]}")
     try:
-        result = _extract_json(resp.content[0].text)
-        # case-insensitive lookup in case Claude lowercases the keys
+        result = _extract_json(raw_text)
         lower_result = {k.lower(): v for k, v in result.items()}
         return {s["visual_id"]: int(lower_result.get(s["code"].lower(), 0)) for s in symbols}
     except Exception as exc:
@@ -1799,6 +1814,7 @@ def load_images_cache(legend_path: str, body_path: str) -> dict | None:
 
 def extract_with_images(legend_path: str, body_path: str,
                         component_library: dict | None = None,
+                        drawing_pdf_path: str | None = None,
                         progress_cb=None) -> dict:
     """
     Image-based extraction pipeline using pre-split legend and body PNGs.
@@ -1901,12 +1917,14 @@ def extract_with_images(legend_path: str, body_path: str,
     print(f"  [AI] unique → { [s['visual_id'] for s in unique_syms] }")
     print(f"  [AI] variant → { [(s['visual_id'], s['code']) for s in variant_syms] }")
 
-    # ── Pass C: unique-letter symbols — exact text label search on full image ──
+    # ── Pass C: unique-letter symbols — PDF text search (preferred) or image ───
     _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
+    _pdf_ok = drawing_pdf_path and Path(drawing_pdf_path).exists()
+    _c_src  = "pdf" if _pdf_ok else "image"
     pass_c: dict[str, int] = {s["visual_id"]: 0 for s in unique_syms}
     if unique_syms:
-        _c_key    = f"pass_c_v4_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
-        _c_key    = f"pass_c_v4_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
+        _c_key    = f"pass_c_v6_{_c_src}_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
+        _c_key    = f"pass_c_v6_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
         _cached_c = _step_cache_get(_c_key)
         if _cached_c is not None:
             pass_c = _cached_c
@@ -1915,8 +1933,32 @@ def extract_with_images(legend_path: str, body_path: str,
         else:
             _emit({"type": "phase", "phase": "pass_C",
                    "msg": f"Pass C — {len(unique_syms)} unique symbol(s)…"})
-            print(f"\n  Pass C — exact label search on full image ({len(unique_syms)} symbols):")
-            pass_c = _count_labels_full_image(body_b64, unique_syms)
+            if _pdf_ok:
+                print(f"\n  Pass C — PDF text extraction ({len(unique_syms)} symbols):")
+                pdf_counts = _count_from_pdf_text(drawing_pdf_path, unique_syms)
+                pass_c = {s["visual_id"]: pdf_counts.get(s["code"], 0) for s in unique_syms}
+            else:
+                print(f"\n  Pass C — image text search ({len(unique_syms)} symbols):")
+                pass_c = _count_labels_full_image(body_b64, unique_syms)
+                # Qwen vision fallback for zero-count symbols when no PDF available
+                if qwen_ok:
+                    zero_syms = [s for s in unique_syms if pass_c.get(s["visual_id"], 0) == 0]
+                    if zero_syms:
+                        print(f"    Qwen fallback for {len(zero_syms)} zero-count symbol(s):")
+                        for sym in zero_syms:
+                            vid = sym["visual_id"]
+                            _fb_key = f"pass_d_fb_{_body_hash}_{hashlib.sha1(vid.encode()).hexdigest()[:8]}"
+                            _cached_fb = _step_cache_get(_fb_key)
+                            if _cached_fb is not None:
+                                fb = _cached_fb.get("count")
+                            else:
+                                fb = _count_variant_qwen(body_b64, vid, sym["code"], sym["name"],
+                                                         sym.get("description", sym["name"]),
+                                                         legend_b64=legend_b64)
+                                _step_cache_set(_fb_key, {"count": fb})
+                            print(f"      {vid}: text=0 → Qwen={fb}")
+                            if fb:
+                                pass_c[vid] = fb
             print(f"    { {k: v for k, v in pass_c.items() if v > 0} }")
             _step_cache_set(_c_key, pass_c)
 
@@ -1986,15 +2028,19 @@ def extract_with_images(legend_path: str, body_path: str,
     if extra_count_items:
         _emit({"type": "phase", "phase": "pass_C_extra",
                "msg": f"Pass C — {len(extra_count_items)} unlisted item(s)…"})
-        print(f"\n  Extra items — Pass C (text label search):")
-        _ex_key = f"pass_c_v4_{_body_hash}_extra_" + "_".join(sorted(s["visual_id"] for s in extra_count_items))
-        _ex_key = f"pass_c_v4_{hashlib.sha1(_ex_key.encode()).hexdigest()[:12]}"
+        print(f"\n  Extra items — Pass C ({'PDF' if _pdf_ok else 'image'} text search):")
+        _ex_key = f"pass_c_v6_{_c_src}_{_body_hash}_extra_" + "_".join(sorted(s["visual_id"] for s in extra_count_items))
+        _ex_key = f"pass_c_v6_{hashlib.sha1(_ex_key.encode()).hexdigest()[:12]}"
         _cached_ex = _step_cache_get(_ex_key)
         if _cached_ex is not None:
             extra_c = _cached_ex
             print(f"    (loaded from cache)")
         else:
-            extra_c = _count_labels_full_image(body_b64, extra_count_items)
+            if _pdf_ok:
+                pdf_counts_extra = _count_from_pdf_text(drawing_pdf_path, extra_count_items)
+                extra_c = {s["visual_id"]: pdf_counts_extra.get(s["code"], 0) for s in extra_count_items}
+            else:
+                extra_c = _count_labels_full_image(body_b64, extra_count_items)
             _step_cache_set(_ex_key, extra_c)
         for sym in extra_count_items:
             vid   = sym["visual_id"]
