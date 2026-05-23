@@ -1638,8 +1638,9 @@ def _count_labels_full_image(body_b64: str, symbols: list[dict]) -> dict[str, in
 Count how many times each code appears as an EXACT standalone text label in the drawing body.
 
 EXACT MATCH RULES — critical:
-- "P1" matches ONLY the label "P1", NOT "P11", "P12", "P13" etc.
-- A code only matches when it is NOT immediately followed by another digit or letter.
+- Match each code CHARACTER FOR CHARACTER exactly as written, including any hyphens (e.g. "N1-R" must be matched with the dash, never as "N1R").
+- After the LAST character of the code, the immediately following character must be a space, end of line, or end of label — NOT a digit, letter, or hyphen. This prevents "N1" from matching "N1-R" or "N10", and "P11" from matching "P110".
+- If both "N1" and "N1-R" appear in the list, count them INDEPENDENTLY — a label is assigned to exactly one code.
 - Do NOT count codes inside the legend/förklaringar box or title block.
 - Count only labels placed in the actual floor plan (rooms, corridors, shafts).
 
@@ -1896,13 +1897,16 @@ def extract_with_images(legend_path: str, body_path: str,
     unique_syms  = [s for s in count_syms if _code_freq[s["code"]] == 1]
     variant_syms = [s for s in count_syms if _code_freq[s["code"]] > 1]
     print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
+    print(f"  [AI] code_freq: { dict(_code_freq) }")
+    print(f"  [AI] unique → { [s['visual_id'] for s in unique_syms] }")
+    print(f"  [AI] variant → { [(s['visual_id'], s['code']) for s in variant_syms] }")
 
     # ── Pass C: unique-letter symbols — exact text label search on full image ──
     _PASS_OFFSETS = {"A": (0.0, 0.0), "B": (0.5, 0.0), "C": (0.0, 0.5)}
     pass_c: dict[str, int] = {s["visual_id"]: 0 for s in unique_syms}
     if unique_syms:
-        _c_key    = f"pass_c_v2_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
-        _c_key    = f"pass_c_v2_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
+        _c_key    = f"pass_c_v4_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in unique_syms))
+        _c_key    = f"pass_c_v4_{hashlib.sha1(_c_key.encode()).hexdigest()[:12]}"
         _cached_c = _step_cache_get(_c_key)
         if _cached_c is not None:
             pass_c = _cached_c
@@ -1978,26 +1982,31 @@ def extract_with_images(legend_path: str, body_path: str,
             "d":          pass_d.get(vid) if not is_unique else None,
         })
 
-    # ── Extra library items: Pass D only (Qwen full-image) ───────────────────
+    # ── Extra library items: Pass C text search (unique codes from description) ─
     if extra_count_items:
-        _emit({"type": "phase", "phase": "pass_D_extra",
-               "msg": f"Pass D — {len(extra_count_items)} unlisted item(s)…"})
-        print(f"\n  Extra items — Pass D (Qwen):")
+        _emit({"type": "phase", "phase": "pass_C_extra",
+               "msg": f"Pass C — {len(extra_count_items)} unlisted item(s)…"})
+        print(f"\n  Extra items — Pass C (text label search):")
+        _ex_key = f"pass_c_v4_{_body_hash}_extra_" + "_".join(sorted(s["visual_id"] for s in extra_count_items))
+        _ex_key = f"pass_c_v4_{hashlib.sha1(_ex_key.encode()).hexdigest()[:12]}"
+        _cached_ex = _step_cache_get(_ex_key)
+        if _cached_ex is not None:
+            extra_c = _cached_ex
+            print(f"    (loaded from cache)")
+        else:
+            extra_c = _count_labels_full_image(body_b64, extra_count_items)
+            _step_cache_set(_ex_key, extra_c)
         for sym in extra_count_items:
-            vid  = sym["visual_id"]
-            desc = sym.get("description") or sym["name"]
-            d    = _count_variant_qwen(body_b64, vid, sym["code"], sym["name"], desc,
-                                       legend_b64=legend_b64) \
-                   if qwen_ok else None
-            final = d if d is not None else 0
-            conf  = "high" if d is not None else "low"
-            icon  = {"high": "✓", "medium": "⚠", "low": "✗"}[conf]
-            print(f"    {vid:<20} {final:>6}  D     {conf} {icon}")
-            counts[vid] = {"d": d, "final": final, "confidence": conf}
+            vid   = sym["visual_id"]
+            c_val = extra_c.get(vid, 0)
+            conf  = "high"
+            icon  = "✓"
+            print(f"    {vid:<20} {c_val:>6}  C     {conf} {icon}")
+            counts[vid] = {"c": c_val, "final": c_val, "confidence": conf}
             _emit({
                 "type": "symbol", "visual_id": vid,
                 "code": sym["code"], "name": sym["name"],
-                "count": final, "confidence": conf, "d": d,
+                "count": c_val, "confidence": conf, "c": c_val,
             })
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
