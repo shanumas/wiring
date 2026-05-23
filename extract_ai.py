@@ -94,9 +94,16 @@ def _client_qwen():
 SONNET = "claude-sonnet-4-6"
 HAIKU  = "claude-haiku-4-5-20251001"
 
-# Qwen model via OpenRouter. Override with $env:QWEN_MODEL if needed.
-# Candidates: qwen/qwen3-vl-32b-instruct (default, fast), qwen/qwen3-vl-8b-thinking (accurate, slow)
-QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen/qwen3-vl-32b-instruct")
+# Vision model used for Pass D (symbol counting). Set VISION_MODEL in .env to override.
+# QWEN_MODEL is accepted as a legacy alias.
+# Good options via OpenRouter:
+#   google/gemini-3.5-flash              (default — latest, strongest reasoning)
+#   google/gemini-3.1-flash-lite         (faster, cheaper)
+#   google/gemini-2.0-flash-001          (older fallback)
+#   qwen/qwen3-vl-32b-instruct           (original default)
+VISION_MODEL = (os.environ.get("VISION_MODEL")
+                or os.environ.get("QWEN_MODEL")
+                or "google/gemini-3.5-flash")
 
 
 def _pdf_hash(pdf_path: str) -> str:
@@ -788,7 +795,7 @@ Reply with ONLY a JSON object and nothing else:
 
     try:
         payload = {
-            "model": QWEN_MODEL,
+            "model": VISION_MODEL,
             "max_tokens": 64,
             "messages": [{
                 "role": "user",
@@ -1261,9 +1268,9 @@ def extract_with_ai(drawing_pdf_path: str, component_library: dict | None) -> di
         # ── VISION items: 3 Claude passes + 1 Qwen pass ───────────────────────
         qwen_available = _client_qwen() is not None
         if qwen_available:
-            print(f"  Qwen pass D enabled (model: {QWEN_MODEL})")
+            print(f"  Vision pass D enabled (model: {VISION_MODEL})")
         else:
-            print(f"  Qwen pass D disabled — set OPENROUTER_API_KEY to enable")
+            print(f"  Vision pass D disabled — set OPENROUTER_API_KEY to enable")
 
         vision_a: dict[str, int] = {}
         vision_b: dict[str, int] = {}
@@ -1683,6 +1690,23 @@ Map each code string to its integer count."""
         return {s["visual_id"]: 0 for s in symbols}
 
 
+def _tile_b64_png(b64: str, rows: int = 2, cols: int = 2) -> list[str]:
+    """Split a base64-encoded PNG into rows×cols tiles; return list of base64 PNGs."""
+    data = base64.b64decode(b64)
+    doc  = fitz.open(stream=data, filetype="png")
+    page = doc[0]
+    w, h = page.rect.width, page.rect.height
+    tw, th = w / cols, h / rows
+    tiles = []
+    for r in range(rows):
+        for c in range(cols):
+            clip = fitz.Rect(c * tw, r * th, (c + 1) * tw, (r + 1) * th)
+            pix  = page.get_pixmap(clip=clip)
+            tiles.append(base64.standard_b64encode(pix.tobytes("png")).decode())
+    doc.close()
+    return tiles
+
+
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
                         description: str,
                         exclude_variants: list[dict] | None = None,
@@ -1709,17 +1733,22 @@ def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
             f'Count ONLY "{code}" ({name}) as described above.\n'
         )
 
+    # For non-ASCII codes (⊡m, ♀Å, …) the code is an internal glyph ID, not a
+    # printed label.  Tell the model to find the visual shape from the legend instead.
+    _ascii_code = code.isascii() and code.replace("-", "").isalnum()
+    _ref_phrase = (f'labeled "{code}" ' if _ascii_code else "") + f'({name})'
+
     if legend_b64:
         prompt = f"""You are counting symbols in a Swedish building services floor plan.
 
-IMAGE 1 is the legend that shows what each symbol looks like.
-IMAGE 2 is the floor plan body (legend already removed) — count only real installed items.
+IMAGE 1 is the legend (FÖRKLARINGAR) that shows what each symbol looks like.
+IMAGE 2 is the floor plan body — count only real installed items, not the legend.
 
-Find and count instances of the symbol labeled "{code}" ({name}) from the legend (IMAGE 1)
-in the floor plan (IMAGE 2).
-  Visual appearance: {description}
+Step 1: Find the symbol {_ref_phrase} in the legend (IMAGE 1) and note its exact visual shape.
+Step 2: Scan IMAGE 2 carefully and count every occurrence of that exact shape in the floor plan.
+  Visual appearance hint: {description}
 {excl_block}
-Reply ONLY with a JSON object, nothing else:
+After your reasoning, end with ONLY a JSON object on the last line:
 {{"{visual_id}": <integer>}}"""
         content = [
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{legend_b64}"}},
@@ -1744,8 +1773,8 @@ Reply ONLY with a JSON object, nothing else:
 
     try:
         payload = {
-            "model": QWEN_MODEL,
-            "max_tokens": 64,
+            "model": VISION_MODEL,
+            "max_tokens": 512,
             "messages": [{"role": "user", "content": content}],
         }
         http_resp = _CLIENT_QWEN.post(
@@ -1755,13 +1784,14 @@ Reply ONLY with a JSON object, nothing else:
         )
         body_text = http_resp.text.strip()
         if http_resp.status_code != 200 or not body_text:
-            print(f"  [Qwen] HTTP {http_resp.status_code} for {visual_id}")
+            print(f"  [vision] HTTP {http_resp.status_code} for {visual_id}: {body_text[:300]}")
             return None
         data = http_resp.json()
         if "error" in data:
-            print(f"  [Qwen] error for {visual_id}: {data['error']}")
+            print(f"  [vision] error for {visual_id}: {data['error']}")
             return None
         text = data["choices"][0]["message"]["content"] or ""
+        print(f"    [vision raw] {visual_id}: {text[:200]}")
         result = _extract_json(text)
         return int(result.get(visual_id, 0))
     except Exception as exc:
@@ -1903,7 +1933,7 @@ def extract_with_images(legend_path: str, body_path: str,
 
     # ── Step 2: count each visual variant ────────────────────────────────────
     qwen_ok = _client_qwen() is not None
-    print(f"  [AI] Qwen pass D {'enabled' if qwen_ok else 'disabled'}")
+    print(f"  [AI] Vision pass D {'enabled' if qwen_ok else 'disabled'} (model: {VISION_MODEL})")
 
     counts: dict[str, dict] = {}
 
@@ -1979,7 +2009,8 @@ def extract_with_images(legend_path: str, body_path: str,
             print(f"\n  Pass D — Qwen full-image (variant symbols):")
             for sym in variant_syms:
                 vid     = sym["visual_id"]
-                _d_key  = f"pass_d_{_body_hash}_{hashlib.sha1(vid.encode()).hexdigest()[:8]}"
+                _model_slug = hashlib.sha1(VISION_MODEL.encode()).hexdigest()[:6]
+                _d_key  = f"pass_d_{_model_slug}_{_body_hash}_{hashlib.sha1(vid.encode()).hexdigest()[:8]}"
                 _cached_d = _step_cache_get(_d_key)
                 if _cached_d is not None:
                     pass_d[vid] = _cached_d.get("count")
@@ -1991,6 +2022,19 @@ def extract_with_images(legend_path: str, body_path: str,
                                                  sym.get("description", sym["name"]),
                                                  exclude_variants=excl,
                                                  legend_b64=legend_b64)
+                    # If full-image returned 0, retry with 2×2 tiles so small or
+                    # rare symbols are seen at higher effective resolution.
+                    if not d_v:
+                        print(f"    {vid}: full-image=0, trying 2×2 tiles…")
+                        tile_total = 0
+                        for t_b64 in _tile_b64_png(body_b64, rows=2, cols=2):
+                            t_cnt = _count_variant_qwen(t_b64, vid, sym["code"],
+                                                        sym["name"],
+                                                        sym.get("description", sym["name"]),
+                                                        legend_b64=legend_b64)
+                            if t_cnt:
+                                tile_total += t_cnt
+                        d_v = tile_total or d_v
                     pass_d[vid] = d_v
                     _step_cache_set(_d_key, {"count": d_v})
                     print(f"    {vid}: {d_v if d_v is not None else '—'}")
@@ -2001,7 +2045,7 @@ def extract_with_images(legend_path: str, body_path: str,
     print(f"\n  {'Code':<20} {'count':>6}  pass  conf")
     for sym in count_syms:
         vid       = sym["visual_id"]
-        is_unique = _code_freq[sym["code"]] == 1
+        is_unique = vid in {s["visual_id"] for s in unique_syms}
 
         if is_unique:
             final  = pass_c.get(vid, 0)

@@ -53,8 +53,11 @@ def _wipe_caches(legend_path: str, body_path: str):
     if img_file.exists():
         img_file.unlink()
         wiped += 1
-    # Wipe pass-C step caches (keyed by version prefix)
+    # Wipe pass-C and pass-D step caches
     for f in AI_CACHE_DIR.glob("step_pass_c*.json"):
+        f.unlink()
+        wiped += 1
+    for f in AI_CACHE_DIR.glob("step_pass_d*.json"):
         f.unlink()
         wiped += 1
     print(f"  [cache] wiped {wiped} cache file(s)")
@@ -87,11 +90,14 @@ def run(wipe_cache: bool = False) -> bool:
     result = extract_with_images(legend, body, lib, drawing_pdf_path=pdf_path)
 
     # Build lookup: code -> first matching summary entry
+    # Index by both original_code (e.g. "⊡m") and system/visual_id (e.g. "elcentral")
+    # so test_expected.json can use either form.
     by_code: dict[str, dict] = {}
     for s in result.get("summary", []):
-        code = (s.get("original_code") or s.get("system") or "").strip()
-        if code and code not in by_code:
-            by_code[code] = s
+        for key in [s.get("original_code"), s.get("system")]:
+            key = (key or "").strip()
+            if key and key not in by_code:
+                by_code[key] = s
 
     expected = cfg["expected"]
     passes, fails = 0, 0
