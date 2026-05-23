@@ -7,7 +7,11 @@
       "WebFetch(domain:openrouter.ai)",
       "Bash(git checkout *)",
       "Bash(git add *)",
-      "PowerShell(Get-ChildItem \"D:\\\\wiring\\\\ai_cache\" | Where-Object { $_.Name -match \"pass_d\" } | Select-Object Name)"
+      "PowerShell(Get-ChildItem \"D:\\\\wiring\\\\ai_cache\" | Where-Object { $_.Name -match \"pass_d\" } | Select-Object Name)",
+      "Bash(Get-ChildItem \"D:\\\\wiring\\\\ai_cache\" -Filter \"step_pass_d*.json\")",
+      "Bash(Sort-Object LastWriteTime -Descending)",
+      "Bash(Select-Object Name, LastWriteTime)",
+      "Bash(sort -k6,7)"
     ]
   }
 }

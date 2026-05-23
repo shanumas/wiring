@@ -1777,7 +1777,6 @@ Output ONLY: {{{ids_template}}}"""
         payload = {
             "model": VISION_MODEL,
             "max_tokens": 4096,
-            "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": content}],
         }
         http_resp = _CLIENT_VISION.post(
@@ -1869,7 +1868,6 @@ Reply ONLY with a JSON object, nothing else:
         payload = {
             "model": VISION_MODEL,
             "max_tokens": 4096,
-            "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": content}],
         }
         http_resp = _CLIENT_VISION.post(
@@ -2163,7 +2161,8 @@ def extract_with_images(legend_path: str, body_path: str,
                                               sym.get("description", sym["name"]),
                                               legend_b64=legend_b64)
                     pass_d[vid] = d_v
-                    _step_cache_set(_d_key, {vid: d_v})
+                    if d_v is not None:
+                        _step_cache_set(_d_key, {vid: d_v})
                     print(f"    {vid}: {d_v if d_v is not None else '—'}")
                     _emit({
                         "type": "symbol", "visual_id": vid,
@@ -2177,7 +2176,8 @@ def extract_with_images(legend_path: str, body_path: str,
                     vids_str = ", ".join(s["visual_id"] for s in fam)
                     print(f"    [family] counting jointly: {vids_str}")
                     results = _count_family_vision(body_b64, fam, legend_b64)
-                    _step_cache_set(_d_key, {v: results.get(v) for v in results})
+                    if any(v is not None for v in results.values()):
+                        _step_cache_set(_d_key, {v: results.get(v) for v in results})
                     for sym in fam:
                         vid = sym["visual_id"]
                         pass_d[vid] = results.get(vid)
