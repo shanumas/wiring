@@ -263,7 +263,13 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
         else:
             lookbehind = r"(?<![A-Za-z\u00C0-\u024F])"     # no letter before (digits OK)
 
-        pattern = lookbehind + re.escape(code) + r"(?!\d)(?!-[A-Z0-9])"
+        # Single-letter codes (circle labels like A, B, C, D) need a full word
+        # boundary on the right too — otherwise "C" matches "CIRCUIT" etc.
+        if len(code) == 1:
+            lookahead = r"(?![A-Za-zÀ-ɏ\d])"
+        else:
+            lookahead = r"(?!\d)(?!-[A-Z0-9])"
+        pattern = lookbehind + re.escape(code) + lookahead
         counts[code] = len(re.findall(pattern, full_text))
     return counts
 
@@ -2041,7 +2047,7 @@ def extract_with_images(legend_path: str, body_path: str,
     # labels in the floor plan and are handled here.  Legend-parser artifacts (e.g.
     # "RA" misread from a glyph) have code_freq > 1 or non-ASCII, so they are still
     # routed to vision via the code_freq check above.
-    _PDF_SEARCHABLE = re.compile(r'^[A-Za-z][0-9][A-Za-z0-9\-]*$')
+    _PDF_SEARCHABLE = re.compile(r'^[A-Za-z]([0-9][A-Za-z0-9\-]*)?$')
     unique_syms  = [s for s in count_syms
                     if _code_freq[s["code"]] == 1 and _PDF_SEARCHABLE.match(s["code"])]
     variant_syms = [s for s in count_syms
