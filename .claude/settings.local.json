@@ -16,7 +16,8 @@
       "Bash(Get-ChildItem \"D:\\\\wiring\\\\ai_cache\\\\step_pass_c_v6_*.json\")",
       "Bash(Select-Object Name)",
       "PowerShell(Remove-Item *)",
-      "PowerShell(python run_tests.py --no-cache 2>&1)"
+      "PowerShell(python run_tests.py --no-cache 2>&1)",
+      "WebSearch"
     ]
   }
 }

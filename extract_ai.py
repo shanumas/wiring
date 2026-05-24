@@ -104,7 +104,7 @@ HAIKU  = "claude-haiku-4-5-20251001"
 #   qwen/qwen3-vl-32b-instruct           (original default)
 VISION_MODEL = (os.environ.get("VISION_MODEL")
                 or os.environ.get("QWEN_MODEL")
-                or "google/gemini-3.5-flash")
+                or "google/gemini-3.1-pro-preview")
 
 
 def _pdf_hash(pdf_path: str) -> str:
@@ -1754,13 +1754,15 @@ def _smart_exclusions(target: dict, all_variants: list[dict]) -> list[dict]:
 
 
 def _count_family_vision(body_b64: str, variants: list[dict],
-                         legend_b64: str | None = None) -> dict[str, int | None]:
+                         legend_b64: str | None = None,
+                         model: str | None = None) -> dict[str, int | None]:
     """Count multiple visually similar variants in ONE joint call.
 
     Asking the model to classify every instance into one of N categories in a
     single pass avoids the double-counting and confusion that occurs when the
     same similar-looking symbol is counted in N separate calls.
     """
+    _model = model or VISION_MODEL
     client = _client_vision()
     if client is None:
         return {v["visual_id"]: None for v in variants}
@@ -1799,7 +1801,7 @@ Output ONLY: {{{ids_template}}}"""
 
     try:
         payload = {
-            "model": VISION_MODEL,
+            "model": _model,
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": content}],
         }
@@ -1828,13 +1830,15 @@ Output ONLY: {{{ids_template}}}"""
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
                         description: str,
                         exclude_variants: list[dict] | None = None,
-                        legend_b64: str | None = None) -> int | None:
+                        legend_b64: str | None = None,
+                        model: str | None = None) -> int | None:
     """Vision pass D — count one visual variant in the body image.
 
     legend_b64: optional legend image passed as a visual reference so the vision model can
     see the exact symbol shape rather than relying solely on the text description.
     Especially useful for purely graphical symbols with no standard letter code.
     """
+    _model = model or VISION_MODEL
     client = _client_vision()
     if client is None:
         return None
@@ -1890,7 +1894,7 @@ Reply ONLY with a JSON object, nothing else:
 
     try:
         payload = {
-            "model": VISION_MODEL,
+            "model": _model,
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": content}],
         }
@@ -2211,10 +2215,10 @@ def extract_with_images(legend_path: str, body_path: str,
         if qwen_ok:
             _emit({"type": "phase", "phase": "pass_D",
                    "msg": f"Pass D — Vision: {len(variant_syms)} variant(s)…"})
-            print(f"\n  Pass D — Vision full-image (variant symbols):")
+            print(f"\n  Pass D — Vision full-image (model: {VISION_MODEL}):")
             _model_slug = hashlib.sha1(VISION_MODEL.encode()).hexdigest()[:6]
 
-            # Group into families: symbols whose visual_id shares a ≥4-char prefix
+            # Group into families: symbols whose visual_id shares a ≥3-char prefix
             _families: list[list[dict]] = []
             for sym in variant_syms:
                 placed = False
@@ -2227,11 +2231,10 @@ def extract_with_images(legend_path: str, body_path: str,
                     _families.append([sym])
 
             for fam in _families:
-                # Build a cache key that covers all members of the family
                 _fam_hash = hashlib.sha1(
                     "|".join(sorted(s["visual_id"] for s in fam)).encode()
                 ).hexdigest()[:12]
-                _d_key = f"pass_d_{_model_slug}_{_body_hash}_{_fam_hash}"
+                _d_key    = f"pass_d_{_model_slug}_{_body_hash}_{_fam_hash}"
                 _cached_d = _step_cache_get(_d_key)
 
                 if _cached_d is not None:
@@ -2266,7 +2269,6 @@ def extract_with_images(legend_path: str, body_path: str,
                         "c": None, "d": d_v,
                     })
                 else:
-                    # Joint call for the whole family
                     vids_str = ", ".join(s["visual_id"] for s in fam)
                     print(f"    [family] counting jointly: {vids_str}")
                     results = _count_family_vision(body_b64, fam, legend_b64)
