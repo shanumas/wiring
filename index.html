@@ -169,6 +169,18 @@
     }
     #recompute-btn:hover { background: #eef2f8; }
     #recompute-btn:disabled { color: #aaa; cursor: default; }
+    #pass-mode-select {
+      display: none;
+      align-self: center;
+      margin-right: 4px;
+      font-size: 10px;
+      border: 1px solid #c0c8d8;
+      border-radius: 3px;
+      color: #4a6296;
+      padding: 2px 4px;
+      background: #fff;
+      cursor: pointer;
+    }
 
     #sidebar {
       flex: 0 0 300px;
@@ -754,6 +766,11 @@
     <div class="sidebar-tabs">
       <div class="sidebar-tab active" data-panel="comp-panel">Components</div>
       <div class="sidebar-tab"        data-panel="est-panel">Estimate</div>
+      <select id="pass-mode-select" title="Which passes to run">
+        <option value="all">All passes</option>
+        <option value="text">Text only</option>
+        <option value="vision">Vision only</option>
+      </select>
       <button id="recompute-btn" title="Recompute AI extraction (uses tokens)">↻ Recompute</button>
     </div>
     <div id="comp-panel" class="sidebar-panel active">
@@ -895,6 +912,8 @@
     // Show recompute button only in AI mode when results are loaded
     document.getElementById('recompute-btn').style.display =
       extractionMode === 'ai' ? 'block' : 'none';
+    document.getElementById('pass-mode-select').style.display =
+      extractionMode === 'ai' ? 'inline-block' : 'none';
   }
 
   document.getElementById('recompute-btn').addEventListener('click', () => {
@@ -1038,7 +1057,12 @@
     }
 
     // ── fetch + SSE parse ─────────────────────────────────────────────────
-    const url = `/drawing/${encodeURIComponent(name)}/run-ai-stream${force ? '?force=true' : ''}`;
+    const passMode = document.getElementById('pass-mode-select')?.value || 'all';
+    const params = new URLSearchParams();
+    if (force)    params.set('force', 'true');
+    if (passMode !== 'all') params.set('pass_mode', passMode);
+    const qs  = params.toString();
+    const url = `/drawing/${encodeURIComponent(name)}/run-ai-stream${qs ? '?' + qs : ''}`;
     let resp;
     try {
       resp = await fetch(url, { method: 'POST' });

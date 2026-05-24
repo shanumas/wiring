@@ -1945,7 +1945,13 @@ def load_images_cache(legend_path: str, body_path: str) -> dict | None:
 def extract_with_images(legend_path: str, body_path: str,
                         component_library: dict | None = None,
                         drawing_pdf_path: str | None = None,
-                        progress_cb=None) -> dict:
+                        progress_cb=None,
+                        pass_mode: str = "all") -> dict:
+    """pass_mode: 'all' | 'text' | 'vision'
+       'text'   — run Pass C only; skip vision (Pass D). Zero tokens.
+       'vision' — skip Pass C; run Pass D on everything (including normally-unique codes).
+       'all'    — normal full pipeline.
+    """
     """
     Image-based extraction pipeline using pre-split legend and body PNGs.
 
@@ -1963,7 +1969,9 @@ def extract_with_images(legend_path: str, body_path: str,
 
     cache_key  = _images_cache_key(legend_path, body_path)
     cache_file = AI_CACHE_DIR / f"images_{cache_key}.json"
-    if cache_file.exists():
+    if pass_mode != "all":
+        print(f"  [AI] pass_mode={pass_mode!r} — skipping image cache")
+    elif cache_file.exists():
         print(f"  [AI] loaded from image cache ({cache_key})")
         return json.loads(cache_file.read_text(encoding="utf-8"))
 
@@ -2096,7 +2104,17 @@ def extract_with_images(legend_path: str, body_path: str,
                     and _PDF_SEARCHABLE.match(s["code"])
                     and not (len(s["code"]) == 1 and _shadowed_by_other_code(s["code"]))]
     variant_syms = [s for s in count_syms if s not in unique_syms]
-    print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
+
+    # pass_mode override: collapse routing for single-pass testing
+    if pass_mode == "vision":
+        # Move everything to vision — treat all as variants
+        variant_syms = list(count_syms)
+        unique_syms  = []
+    elif pass_mode == "text":
+        # Text only — variants will be emitted with count=0, no vision calls
+        pass
+
+    print(f"  [AI] pass_mode={pass_mode!r}: {len(unique_syms)} text, {len(variant_syms)} vision")
     print(f"  [AI] code_freq: { dict(_code_freq) }")
     print(f"  [AI] unique → { [s['visual_id'] for s in unique_syms] }")
     print(f"  [AI] variant → { [(s['visual_id'], s['code']) for s in variant_syms] }")
@@ -2164,7 +2182,15 @@ def extract_with_images(legend_path: str, body_path: str,
     # count all members in one joint call so the model can classify each
     # instance into exactly one category.
     pass_d: dict[str, int | None] = {s["visual_id"]: None for s in variant_syms}
-    if variant_syms:
+    if variant_syms and pass_mode == "text":
+        # Text-only mode: emit variants immediately with count=0, no vision calls
+        for sym in variant_syms:
+            _emit({
+                "type": "symbol", "visual_id": sym["visual_id"],
+                "code": sym["code"], "name": sym.get("name", sym["code"]),
+                "count": 0, "confidence": "low", "c": None, "d": None,
+            })
+    elif variant_syms:
         if qwen_ok:
             _emit({"type": "phase", "phase": "pass_D",
                    "msg": f"Pass D — Vision: {len(variant_syms)} variant(s)…"})
@@ -2395,7 +2421,8 @@ def extract_with_images(legend_path: str, body_path: str,
         "summary":         summary,
         "extraction_mode": "ai_images",
     }
-    cache_file.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    if pass_mode == "all":
+        cache_file.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
     return result
 
 

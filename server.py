@@ -436,7 +436,7 @@ def drawing_run_ai(name: str, force: bool = False):
 
 
 @app.post("/drawing/{name}/run-ai-stream")
-async def drawing_run_ai_stream(name: str, force: bool = False):
+async def drawing_run_ai_stream(name: str, force: bool = False, pass_mode: str = "all"):
     """SSE endpoint — streams phase/symbol events as AI extraction progresses."""
     if name not in _cache:
         raise HTTPException(404, f"Drawing '{name}' not found")
@@ -453,6 +453,12 @@ async def drawing_run_ai_stream(name: str, force: bool = False):
             img_cache = AI_CACHE_DIR / f"images_{img_key}.json"
             if img_cache.exists():
                 img_cache.unlink()
+            # Also wipe step caches — deleting only the image cache exposes stale
+            # step caches underneath it, which can have wrong values from past runs.
+            for _sc in AI_CACHE_DIR.glob("step_pass_c*.json"):
+                _sc.unlink()
+            for _sc in AI_CACHE_DIR.glob("step_pass_d*.json"):
+                _sc.unlink()
         _cache[name]["components_ai"] = None
         _cache[name]["estimate_ai"]   = None
 
@@ -468,7 +474,8 @@ async def drawing_run_ai_stream(name: str, force: bool = False):
             if LEGEND_IMG.exists() and BODY_IMG.exists():
                 ai_comp = extract_with_images(
                     str(LEGEND_IMG), str(BODY_IMG), _component_library,
-                    drawing_pdf_path=str(PDF_DIR / name), progress_cb=_cb)
+                    drawing_pdf_path=str(PDF_DIR / name), progress_cb=_cb,
+                    pass_mode=pass_mode)
             else:
                 ai_comp = extract_with_ai(str(PDF_DIR / name), _component_library)
             ai_est = _estimate_ai(ai_comp)
