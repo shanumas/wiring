@@ -472,9 +472,11 @@ async def drawing_run_ai_stream(name: str, force: bool = False, pass_mode: str =
         _ai_running.add(name)
         try:
             if LEGEND_IMG.exists() and BODY_IMG.exists():
+                _pdf_candidates = sorted(PDF_DIR.glob("*.pdf"))
+                _drawing_pdf = str(_pdf_candidates[0]) if _pdf_candidates else None
                 ai_comp = extract_with_images(
                     str(LEGEND_IMG), str(BODY_IMG), _component_library,
-                    drawing_pdf_path=str(PDF_DIR / name), progress_cb=_cb,
+                    drawing_pdf_path=_drawing_pdf, progress_cb=_cb,
                     pass_mode=pass_mode)
             else:
                 ai_comp = extract_with_ai(str(PDF_DIR / name), _component_library)

@@ -24,7 +24,9 @@
     {"code": "D5",   "count": 1, "method": "text"},
     {"code": "F1",   "count": 15, "method": "text"},
     {"code": "F2",   "count": 10, "method": "text"},
-    {"code": "F5",   "count": 3,  "method": "text"}
+    {"code": "F5",   "count": 3,  "method": "text"},
+    {"code": "C",   "count": 0, "method": "text"},
+    {"code": "D",   "count": 1, "method": "text"}
 
   ]
 }
