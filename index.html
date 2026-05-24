@@ -191,7 +191,17 @@
       font-size: 10px;
     }
     #hide-zeros-bar span { color:#888; margin-right:2px; }
-    .zero-filter-btn {
+    #method-filter-bar {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      background: #f4f6fa;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 10px;
+    }
+    #method-filter-bar span { color:#888; margin-right:2px; }
+    .zero-filter-btn, .method-filter-btn {
       padding: 2px 8px;
       border: 1px solid #ccc;
       border-radius: 10px;
@@ -205,6 +215,11 @@
       background: #2471a3;
       color: #fff;
       border-color: #2471a3;
+    }
+    .method-filter-btn.active {
+      background: #5a3a7a;
+      color: #fff;
+      border-color: #5a3a7a;
     }
 
     /* ── streaming activity log (Claude Code style) ── */
@@ -748,6 +763,12 @@
         <button class="zero-filter-btn active" data-filter="hide">Hide zeros</button>
         <button class="zero-filter-btn" data-filter="only">Zeros only</button>
       </div>
+      <div id="method-filter-bar">
+        <span>Method:</span>
+        <button class="method-filter-btn active" data-method="all">All</button>
+        <button class="method-filter-btn" data-method="text">Text search</button>
+        <button class="method-filter-btn" data-method="vision">Vision</button>
+      </div>
       <div id="comp-list"></div>
     </div>
     <div id="est-panel" class="sidebar-panel">
@@ -766,15 +787,19 @@
   let currentDrawing = null;
   let currentDrawingType = 'unknown';
   let extractionMode = 'ai';   // 'text' | 'vector' | 'ai'
-  let zeroFilter = 'hide'; // 'all' | 'hide' | 'only'
+  let zeroFilter   = 'hide'; // 'all' | 'hide' | 'only'
+  let methodFilter = 'all';  // 'all' | 'text' | 'vision'
 
   function applyHideZeros() {
     document.querySelectorAll('#comp-list .comp-row[data-count]').forEach(row => {
-      const cnt = parseFloat(row.dataset.count ?? '1');
+      const cnt    = parseFloat(row.dataset.count ?? '1');
       const isZero = cnt === 0;
-      if (zeroFilter === 'hide' && isZero) {
-        row.style.display = 'none';
-      } else if (zeroFilter === 'only' && !isZero) {
+      const method = row.dataset.method || '';
+
+      const hiddenByZero   = (zeroFilter === 'hide' && isZero) || (zeroFilter === 'only' && !isZero);
+      const hiddenByMethod = methodFilter !== 'all' && method !== methodFilter;
+
+      if (hiddenByZero || hiddenByMethod) {
         row.style.display = 'none';
       } else {
         row.style.display = '';
@@ -951,6 +976,8 @@
         : `${icon}`;
     const validHtml = `<div class="comp-validators" style="color:${confColor}">${methodPart}</div>`;
 
+    const rowMethod = sym.c != null ? 'text' : sym.d != null ? 'vision' : '';
+
     const isNew = !row;
     if (isNew) {
       row = document.createElement('div');
@@ -958,9 +985,12 @@
       row.className = 'comp-row arriving';
       rowsDiv.appendChild(row);
     }
-    row.dataset.count = count;
-    const _isZero = count === 0;
-    row.style.display = (zeroFilter === 'hide' && _isZero) || (zeroFilter === 'only' && !_isZero) ? 'none' : '';
+    row.dataset.count  = count;
+    row.dataset.method = rowMethod;
+    const _isZero        = count === 0;
+    const _hiddenByZero  = (zeroFilter === 'hide' && _isZero) || (zeroFilter === 'only' && !_isZero);
+    const _hiddenByMeth  = methodFilter !== 'all' && rowMethod !== methodFilter;
+    row.style.display = (_hiddenByZero || _hiddenByMeth) ? 'none' : '';
     row.style.opacity = (zeroFilter === 'all' && _isZero) ? '0.45' : '';
 
     row.innerHTML = `
@@ -1188,6 +1218,8 @@
         extractionMode === 'ai' ? 'block' : 'none';
       document.getElementById('hide-zeros-bar').style.display =
         extractionMode === 'ai' ? 'flex' : 'none';
+      document.getElementById('method-filter-bar').style.display =
+        extractionMode === 'ai' ? 'flex' : 'none';
       // Re-fetch current drawing in new mode
       if (currentDrawing) {
         const prev = currentDrawing;
@@ -1206,8 +1238,18 @@
     });
   });
 
+  document.querySelectorAll('.method-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      methodFilter = btn.dataset.method;
+      document.querySelectorAll('.method-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyHideZeros();
+    });
+  });
+
   // Init bar visibility (default mode is 'ai')
   document.getElementById('hide-zeros-bar').style.display = 'flex';
+  document.getElementById('method-filter-bar').style.display = 'flex';
 
   // ── initial load ──────────────────────────────────────────────────────────
   loadDrawingList();
@@ -1392,8 +1434,13 @@
       const row = document.createElement('div');
       const qty = s.measurement_type === 'length' ? (s.total_length_m ?? 0) : (s.count ?? 0);
       row.className = 'comp-row';
-      row.dataset.vkey = variantKey(s);
-      row.dataset.count = qty;
+      row.dataset.vkey   = variantKey(s);
+      row.dataset.count  = qty;
+      row.dataset.method = s.count_method === 'pass_C' ? 'text'
+                         : s.count_method === 'pass_D' ? 'vision'
+                         : s.count_method === 'text'   ? 'text'
+                         : s.count_method === 'vision' ? 'vision'
+                         : '';
       row.style.setProperty('--c', col(s));
 
       const sizeStr  = s.width_mm === 'per_drawing' ? 'per dwg'

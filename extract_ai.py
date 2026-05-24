@@ -20,6 +20,7 @@ Stage 2 — Drawing takeoff (run once per drawing PDF)
 
 import anthropic
 import base64
+import collections
 import hashlib
 import json
 import os
@@ -1983,7 +1984,19 @@ def extract_with_images(legend_path: str, body_path: str,
         print("  [AI] Analysing legend image …")
         try:
             symbols = _analyse_legend_image(legend_b64, component_library)
-            _step_cache_set(_leg_cache_key, symbols)
+            # Validate before caching: duplicate codes indicate a bad parse.
+            # A correct legend has each code appear exactly once; duplicates mean
+            # the AI mis-classified two visually different symbols as the same code,
+            # which corrupts the unique/variant routing for all subsequent runs.
+            _dup_codes = {c for c, n in collections.Counter(
+                s["code"] for s in symbols if s.get("measurement_type") == "count"
+            ).items() if n > 1}
+            if _dup_codes:
+                print(f"  [AI] Legend rejected — duplicate codes {_dup_codes}; "
+                      f"delete {AI_CACHE_DIR / f'step_{_leg_cache_key}.json'} to re-analyse")
+                symbols = []
+            else:
+                _step_cache_set(_leg_cache_key, symbols)
         except Exception as exc:
             print(f"  [AI] Legend analysis failed: {exc}")
             symbols = []
@@ -2048,10 +2061,41 @@ def extract_with_images(legend_path: str, body_path: str,
     # "RA" misread from a glyph) have code_freq > 1 or non-ASCII, so they are still
     # routed to vision via the code_freq check above.
     _PDF_SEARCHABLE = re.compile(r'^[A-Za-z]([0-9][A-Za-z0-9\-]*)?$')
+
+    # Single-letter codes get an extra "shadow" check: if any OTHER legend code
+    # would cause false positives in PDF text search for that letter, route to vision.
+    #
+    # Two shadow triggers:
+    #   1. Another code CONTAINS the letter in a matchable standalone position
+    #      (e.g. "Å A" shadows "A" — space before A passes lookbehind;
+    #           "●B" shadows "B" — bullet before B passes lookbehind)
+    #   2. Another code STARTS WITH the letter followed by more letters
+    #      (e.g. CUT/CK/COT shadow "C" — the "["-shaped socket outlet symbol
+    #       in the legend is read as "C" by the AI; searching for standalone "C"
+    #       would hit PDF spans where the socket glyph is encoded as the character C)
+    #      D1–D5 / F1–F5 do NOT trigger this: digit after the letter means the
+    #      prefix is unambiguously a different code, not a graphical prefix.
+    _lb_shadow = r"(?<![A-Za-zÀ-ɏ])"
+    _la_shadow = r"(?![A-Za-zÀ-ɏ\d])"
+    _letter_prefix_pat_cache: dict[str, re.Pattern] = {}
+    def _shadowed_by_other_code(letter: str) -> bool:
+        # Check 1: letter appears standalone inside another code
+        standalone = re.compile(_lb_shadow + re.escape(letter) + _la_shadow)
+        if any(s["code"] != letter and standalone.search(s["code"]) for s in count_syms):
+            return True
+        # Check 2: another code starts with this letter followed by more letters
+        # (graphical symbol prefix — socket outlet "[" read as "C", etc.)
+        prefix_pat = _letter_prefix_pat_cache.get(letter)
+        if prefix_pat is None:
+            prefix_pat = re.compile(r'^' + re.escape(letter) + r'[A-Za-z]')
+            _letter_prefix_pat_cache[letter] = prefix_pat
+        return any(s["code"] != letter and prefix_pat.match(s["code"]) for s in count_syms)
+
     unique_syms  = [s for s in count_syms
-                    if _code_freq[s["code"]] == 1 and _PDF_SEARCHABLE.match(s["code"])]
-    variant_syms = [s for s in count_syms
-                    if _code_freq[s["code"]] > 1  or  not _PDF_SEARCHABLE.match(s["code"])]
+                    if _code_freq[s["code"]] == 1
+                    and _PDF_SEARCHABLE.match(s["code"])
+                    and not (len(s["code"]) == 1 and _shadowed_by_other_code(s["code"]))]
+    variant_syms = [s for s in count_syms if s not in unique_syms]
     print(f"  [AI] {len(unique_syms)} unique-letter, {len(variant_syms)} variant symbol(s)")
     print(f"  [AI] code_freq: { dict(_code_freq) }")
     print(f"  [AI] unique → { [s['visual_id'] for s in unique_syms] }")
