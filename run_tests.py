@@ -4,7 +4,8 @@ Loads test_expected.json, runs extract_with_images, compares results.
 
 Usage:
     python run_tests.py
-    python run_tests.py --no-cache   # wipe pass-C/D step caches and image cache
+    python run_tests.py --no-cache    # wipe pass-C/D step caches and image cache
+    python run_tests.py --text-only   # PDF text search only, no AI calls (fast)
 """
 
 import json
@@ -62,7 +63,7 @@ def _wipe_caches(legend_path: str, body_path: str):
         wiped += 1
     print(f"  [cache] wiped {wiped} cache file(s)")
 
-def run(wipe_cache: bool = False) -> bool:
+def run(wipe_cache: bool = False, text_only: bool = False) -> bool:
     cfg    = _load_expected()
     legend = str(ROOT / cfg["drawing"]["legend"])
     body   = str(ROOT / cfg["drawing"]["body"])
@@ -87,7 +88,10 @@ def run(wipe_cache: bool = False) -> bool:
     pdf_path = str(ROOT / cfg["drawing"]["pdf"]) if cfg["drawing"].get("pdf") else None
     if pdf_path:
         print(f"  pdf:    {pdf_path}\n")
-    result = extract_with_images(legend, body, lib, drawing_pdf_path=pdf_path)
+
+    pass_mode = "text" if text_only else "all"
+    result = extract_with_images(legend, body, lib, drawing_pdf_path=pdf_path,
+                                 pass_mode=pass_mode)
 
     # Build lookup: code -> first matching summary entry
     # Index by both original_code (e.g. "⊡m") and system/visual_id (e.g. "elcentral")
@@ -100,6 +104,9 @@ def run(wipe_cache: bool = False) -> bool:
                 by_code[key] = s
 
     expected = cfg["expected"]
+    if text_only:
+        expected = [e for e in expected if e.get("method") == "text"]
+
     passes, fails = 0, 0
 
     print(f"\n{'CODE':<10} {'EXPECTED':>8} {'GOT':>8}  {'EXP METHOD':<12} {'GOT METHOD':<12}  RESULT")
@@ -145,7 +152,9 @@ def run(wipe_cache: bool = False) -> bool:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-cache", action="store_true",
-                        help="Wipe pass-C step caches and image cache before running")
+                        help="Wipe pass-C/D step caches and image cache before running")
+    parser.add_argument("--text-only", action="store_true",
+                        help="Run PDF text search only — no AI vision calls (fast, used in pre-commit)")
     args = parser.parse_args()
-    ok = run(wipe_cache=args.no_cache)
+    ok = run(wipe_cache=args.no_cache, text_only=args.text_only)
     sys.exit(0 if ok else 1)
