@@ -223,7 +223,14 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
     # ── 3. Collect text spans that are in the drawing area ───────────────────
     # Spans are joined with "|" so that letters at the end of one span cannot
     # bleed into the start of a code in the next span (e.g. "A|P12" not "AP12").
-    parts = []
+    # strict_parts excludes border zones (left col, right margin, top margin)
+    # where grid labels and cross-section markers live — used for single-letter codes.
+    _SL_X_LEFT  = TITLEBLK_X_MAX
+    _SL_X_RIGHT = 80
+    _SL_Y_TOP   = 80
+
+    parts        = []
+    strict_parts = []
     for blk in page.get_text("dict")["blocks"]:
         if blk.get("type") != 0:
             continue
@@ -231,6 +238,7 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
             for sp in ln["spans"]:
                 bbox = sp["bbox"]
                 x0, y0 = bbox[0], bbox[1]
+                x1     = bbox[2]
                 # Exclude text at or past the FÖRKLARINGAR section (full-width cut)
                 if legend_y_cut is not None and y0 >= legend_y_cut:
                     continue
@@ -243,8 +251,11 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
                 if excl and fitz.Rect(bbox).intersects(excl):
                     continue
                 parts.append(sp["text"])
+                if x0 >= _SL_X_LEFT and x1 <= w - _SL_X_RIGHT and y0 >= _SL_Y_TOP:
+                    strict_parts.append(sp["text"])
 
-    full_text = "|".join(parts)
+    full_text   = "|".join(parts)
+    strict_text = "|".join(strict_parts)
     doc.close()
 
     counts = {}
@@ -266,12 +277,18 @@ def _count_from_pdf_text(pdf_path: str, codes: list[dict],
 
         # Single-letter codes (circle labels like A, B, C, D) need a full word
         # boundary on the right too — otherwise "C" matches "CIRCUIT" etc.
+        # Use strict_text to avoid border-zone false positives.
+        # Also extend lookbehind to block hyphen ("EI 30-C") and lookahead
+        # to block space ("F 15" fuse/MCB ratings).
         if len(code) == 1:
-            lookahead = r"(?![A-Za-zÀ-ɏ\d])"
+            lookbehind  = r"(?<![A-Za-zÀ-ɏ\-])"
+            lookahead   = r"(?![A-Za-zÀ-ɏ\d\s])"
+            search_text = strict_text
         else:
-            lookahead = r"(?!\d)(?!-[A-Z0-9])"
+            lookahead   = r"(?!\d)(?!-[A-Z0-9])"
+            search_text = full_text
         pattern = lookbehind + re.escape(code) + lookahead
-        counts[code] = len(re.findall(pattern, full_text))
+        counts[code] = len(re.findall(pattern, search_text))
     return counts
 
 
