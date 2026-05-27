@@ -620,7 +620,7 @@ No markdown fences, no explanation, no commentary. The very first character must
       "quantity": 8, "unit": "pcs", "width_mm": null,
       "ok_height_mm": null, "uk_height_mm": null, "fire_rating": null}},
     {{"code": "KS", "name": "Kabelstege", "measurement_type": "length",
-      "quantity": 45.5, "unit": "m", "width_mm": 400,
+      "quantity": 45.5, "unit": "m", "segment_count": 3, "width_mm": 400,
       "ok_height_mm": 2700, "uk_height_mm": null, "fire_rating": null}}
   ]
 }}"""
@@ -1920,8 +1920,8 @@ Reply ONLY with a JSON object, nothing else:
         return None
 
 
-def _estimate_lengths_from_body(body_b64: str, length_syms: list[dict]) -> dict[str, float]:
-    """Ask Claude to estimate total run lengths for line-installed items from the body image."""
+def _estimate_lengths_from_body(body_b64: str, length_syms: list[dict]) -> dict[str, dict]:
+    """Ask Claude to estimate total run lengths and segment counts for line-installed items."""
     if not length_syms:
         return {}
     syms_desc = "\n".join(
@@ -1931,14 +1931,14 @@ def _estimate_lengths_from_body(body_b64: str, length_syms: list[dict]) -> dict[
     prompt = f"""You are estimating total run lengths of line-installed items in a building floor plan.
 The legend has been removed from this image.
 
-For each item below, estimate the TOTAL installed run length in metres.
+For each item below, estimate the TOTAL installed run length in metres AND count the number of distinct segments/runs.
 Use the drawing scale printed in the title block (e.g. "SKALA 1:50").
 
 Items to measure:
 {syms_desc}
 
-Return ONLY a JSON object mapping visual_id to total metres (float):
-{{{{"KS": 45.5, "KR": 12.0}}}}"""
+Return ONLY a JSON object mapping visual_id to an object with "length_m" (float) and "count" (int, number of distinct runs/segments):
+{{{{"KS": {{{{"length_m": 45.5, "count": 3}}}}, "KR": {{{{"length_m": 12.0, "count": 1}}}}}}}}"""
 
     resp = _client().messages.create(
         model=SONNET,
@@ -1950,7 +1950,14 @@ Return ONLY a JSON object mapping visual_id to total metres (float):
     )
     try:
         result = _extract_json(resp.content[0].text)
-        return {k: float(v) for k, v in result.items() if isinstance(v, (int, float))}
+        out = {}
+        for k, v in result.items():
+            if isinstance(v, dict):
+                out[k] = {"length_m": float(v.get("length_m", 0)), "count": max(1, int(v.get("count", 1) or 1))}
+            elif isinstance(v, (int, float)):
+                # backward-compat: old format was just a float
+                out[k] = {"length_m": float(v), "count": 1}
+        return out
     except Exception:
         return {}
 
@@ -2355,10 +2362,10 @@ def extract_with_images(legend_path: str, body_path: str,
             })
 
     # ── Step 3: estimate lengths ─────────────────────────────────────────────
-    lengths: dict[str, float] = {}
+    lengths: dict[str, dict] = {}
     if length_syms:
-        _len_key    = f"lengths_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in length_syms))
-        _len_key    = f"lengths_{hashlib.sha1(_len_key.encode()).hexdigest()[:12]}"
+        _len_key    = f"lengths2_{_body_hash}_" + "_".join(sorted(s["visual_id"] for s in length_syms))
+        _len_key    = f"lengths2_{hashlib.sha1(_len_key.encode()).hexdigest()[:12]}"
         _cached_len = _step_cache_get(_len_key)
         if _cached_len is not None:
             lengths = _cached_len
@@ -2370,8 +2377,10 @@ def extract_with_images(legend_path: str, body_path: str,
             print(f"\n  Estimating lengths for {len(length_syms)} item(s) …")
             try:
                 lengths = _estimate_lengths_from_body(body_b64, length_syms)
-                for vid, m in lengths.items():
-                    print(f"    {vid}: {m:.1f} m")
+                for vid, d in lengths.items():
+                    m = d.get("length_m", 0) if isinstance(d, dict) else d
+                    n = d.get("count", 1)    if isinstance(d, dict) else 1
+                    print(f"    {vid}: {m:.1f} m ({n} segment(s))")
                 _step_cache_set(_len_key, lengths)
             except Exception as exc:
                 print(f"  [AI] Length estimation failed: {exc}")
@@ -2413,7 +2422,9 @@ def extract_with_images(legend_path: str, body_path: str,
                 "original_code": code,
             })
         else:
-            qty = lengths.get(vid, 0.0)
+            _len_data  = lengths.get(vid, {})
+            qty        = _len_data.get("length_m", 0.0) if isinstance(_len_data, dict) else float(_len_data or 0)
+            seg_count  = _len_data.get("count", 1) if isinstance(_len_data, dict) else 1
             components.append({
                 "id": f"IMG_{vid}_{i}", "type": vid, "name": name,
                 "en_name": "", "color": color, "size": None,
@@ -2427,7 +2438,7 @@ def extract_with_images(legend_path: str, body_path: str,
                 "system": vid, "name": name, "orientation": "horizontal",
                 "width_mm": None, "ok_ofg_mm": None, "uk_ofg_mm": None,
                 "fire_rating": None, "measurement_type": "length", "unit": "m",
-                "count": 1, "total_length_m": qty,
+                "count": seg_count, "total_length_m": qty,
                 "original_code": code,
             })
 
@@ -2500,7 +2511,7 @@ def _normalise(raw: dict, page_w: float, page_h: float) -> dict:
             "unit":             unit,
         }
         if mtype == "length":
-            s["count"]          = 1
+            s["count"]          = max(1, int(item.get("segment_count", 1) or 1))
             s["total_length_m"] = qty
         else:
             s["count"] = max(0, int(round(qty)))

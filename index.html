@@ -1525,7 +1525,7 @@
 
       const isLengthItem = (extractionMode === 'vector' || extractionMode === 'ai') && s.total_length_m != null;
       const qtyDisplay   = isLengthItem
-        ? s.total_length_m.toFixed(1) + ' m'
+        ? s.total_length_m.toFixed(1) + ' m' + (s.count != null ? ` (${s.count})` : '')
         : s.count;
       const qtyUnit      = isLengthItem ? '' : ' pcs';
 
@@ -1815,7 +1815,7 @@
       const mtype   = item.measurement_type || 'length';
 
       const qtyCell = mtype === 'length'
-        ? `${(item.total_length_m ?? 0).toFixed(1)} m`
+        ? `${(item.total_length_m ?? 0).toFixed(1)} m${item.count != null ? ` (${item.count})` : ''}`
         : `${item.count ?? 0} pcs`;
       const costCell = item.total_cost_sek != null
         ? item.total_cost_sek.toLocaleString()

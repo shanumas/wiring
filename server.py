@@ -65,7 +65,6 @@ def _check_keys() -> None:
     # model is unavailable, quota-exceeded, or misconfigured.
     or_key = os.environ.get("OPENROUTER_API_KEY", "")
     vision_model = (os.environ.get("VISION_MODEL")
-                    or os.environ.get("QWEN_MODEL")
                     or "google/gemini-3.5-flash")
     if not or_key:
         print("  ⚠ OPENROUTER_API_KEY not set — Vision pass D will be disabled.")
