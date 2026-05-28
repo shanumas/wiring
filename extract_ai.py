@@ -92,6 +92,39 @@ def _client_vision():
             return None
     return _CLIENT_VISION
 
+
+def _call_vision(b64_images: list[str], prompt: str, max_tokens: int = 1024) -> str:
+    """Call Gemini (via OpenRouter) with one or more PNG images and a text prompt.
+
+    Raises RuntimeError if the vision client is not configured or the call fails.
+    All image-processing that was previously done by Anthropic/Claude now goes here.
+    """
+    _client_vision()  # ensure _CLIENT_VISION / _VISION_KEY are initialised
+    if _CLIENT_VISION is None:
+        raise RuntimeError("Vision model not configured — set OPENROUTER_API_KEY")
+    content: list[dict] = []
+    for b64 in b64_images:
+        content.append({"type": "image_url",
+                         "image_url": {"url": f"data:image/png;base64,{b64}"}})
+    content.append({"type": "text", "text": prompt})
+    payload = {
+        "model":      VISION_MODEL,
+        "max_tokens": max_tokens,
+        "messages":   [{"role": "user", "content": content}],
+    }
+    resp = _CLIENT_VISION.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={"Authorization": f"Bearer {_VISION_KEY}", "Content-Type": "application/json"},
+        json=payload,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Vision HTTP {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    if "error" in data:
+        raise RuntimeError(f"Vision error: {data['error']}")
+    return data["choices"][0]["message"]["content"] or ""
+
+
 SONNET = "claude-sonnet-4-6"
 HAIKU  = "claude-haiku-4-5-20251001"
 
@@ -323,16 +356,9 @@ If no such box exists, return: {"x1": 0, "y1": 0, "x2": 0, "y2": 0}
 
 ONLY output the raw JSON object, nothing else."""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=64,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
     try:
-        bbox = _extract_json(resp.content[0].text)
+        text = _call_vision([b64], prompt, max_tokens=64)
+        bbox = _extract_json(text)
         if bbox.get("x2", 0) == 0 and bbox.get("y2", 0) == 0:
             return None
         return bbox
@@ -413,16 +439,10 @@ def build_component_library(description_pdf_path: str) -> dict:
     n_pages = len(doc)
     doc.close()
 
-    content = []
-    for i in range(n_pages):
-        b64 = _page_to_b64(description_pdf_path, page_num=i, max_px=2400)
-        content.append({
-            "type":   "image",
-            "source": {"type": "base64", "media_type": "image/png", "data": b64},
-        })
+    images = [_page_to_b64(description_pdf_path, page_num=i, max_px=2400)
+              for i in range(n_pages)]
 
-    content.append({"type": "text", "text": """
-You are reading a component description / legend document from a building services
+    lib_prompt = """You are reading a component description / legend document from a building services
 drawing set (likely Swedish electrical or multi-discipline drawings).
 
 Extract EVERY component or symbol listed. For each one produce:
@@ -446,15 +466,9 @@ Return ONLY valid JSON, no other text:
     {"code": "KS",  "name": "Kabelstege / Cable Ladder",
      "measurement_type": "length", "unit": "m", "notes": "width per drawing"}
   ]
-}
-"""})
+}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=8192,
-        messages=[{"role": "user", "content": content}],
-    )
-    text = resp.content[0].text
+    text = _call_vision(images, lib_prompt, max_tokens=8192)
     try:
         library = _extract_json(text)
     except ValueError:
@@ -625,15 +639,7 @@ No markdown fences, no explanation, no commentary. The very first character must
   ]
 }}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    return _extract_json(resp.content[0].text)
+    return _extract_json(_call_vision([b64], prompt, max_tokens=4096))
 
 
 def _count_in_tile(b64: str, codes: list[dict]) -> dict[str, int]:
@@ -657,15 +663,7 @@ IMPORTANT: Your entire response must be a single JSON object with no text before
 Do not write any explanation. Do not use markdown. Just output the raw JSON object.
 {{{{"P11": 3, "DA": 1, "P12": 0}}}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=512,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    result = _extract_json(resp.content[0].text)
+    result = _extract_json(_call_vision([b64], prompt, max_tokens=512))
     return {c["code"]: int(result.get(c["code"], 0)) for c in codes}
 
 
@@ -712,15 +710,7 @@ Rules:
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
 {{"{code}": {example_val}}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=512,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    result = _extract_json(resp.content[0].text)
+    result = _extract_json(_call_vision([b64], prompt, max_tokens=512))
     return int(result.get(code, 0))
 
 
@@ -764,15 +754,7 @@ Count how many "{code}" ({name}) symbols appear in the actual floor plan
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
 Format: {{"{code}": <your_count>}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=512,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    result = _extract_json(resp.content[0].text)
+    result = _extract_json(_call_vision([b64], prompt, max_tokens=512))
     return int(result.get(code, 0))
 
 
@@ -874,16 +856,8 @@ false if it does not exist at all.
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markdown.
 {{"P11": true, "D3": false}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=512,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
     try:
-        result = _extract_json(resp.content[0].text)
+        result = _extract_json(_call_vision([b64], prompt, max_tokens=512))
         return {c["code"] for c in codes if result.get(c["code"], True)}
     except Exception:
         # On parse failure, assume all present (safe fallback)
@@ -913,15 +887,7 @@ value is the TOTAL across all quadrants. No per-quadrant breakdown, no explanati
 no markdown. The first character must be {{ and the last must be }}.
 {{{{"P11": 27, "DA": 3}}}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=512,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    result = _extract_json(resp.content[0].text)
+    result = _extract_json(_call_vision([b64], prompt, max_tokens=512))
     # Guard: if Claude still returns nested dict, fall back to 0 for that code
     flat = {}
     for c in codes:
@@ -1488,15 +1454,8 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markd
 The very first character must be {{ and the last must be }}.
 Example: {{"{symbols[0]['visual_id']}": 2}}"""
 
-    resp = _client().messages.create(
-        model=SONNET, max_tokens=256,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": tile_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
     try:
-        result = _extract_json(resp.content[0].text)
+        result = _extract_json(_call_vision([tile_b64], prompt, max_tokens=256))
         return {s["visual_id"]: int(result.get(s["visual_id"], 0)) for s in symbols}
     except Exception:
         return {s["visual_id"]: 0 for s in symbols}
@@ -1526,15 +1485,8 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markd
 The very first character must be {{ and the last must be }}.
 Example: {{"{items[0]['code']}": 2}}"""
 
-    resp = _client().messages.create(
-        model=SONNET, max_tokens=256,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": tile_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
     try:
-        result = _extract_json(resp.content[0].text)
+        result = _extract_json(_call_vision([tile_b64], prompt, max_tokens=256))
         return {it["code"]: int(result.get(it["code"], 0)) for it in items}
     except Exception:
         return {it["code"]: 0 for it in items}
@@ -1564,10 +1516,19 @@ CRITICAL: If the same code label (e.g. "A") appears with TWO VISUALLY DIFFERENT 
 (e.g. one with 2 legs and one with 1 leg), list them as SEPARATE entries with distinct visual_id
 values: "A_v1" and "A_v2". Describe what makes each visually distinct.
 
+IMPORTANT — Swedish special letters: "Å", "Ä", "Ö" are DISTINCT codes, completely different
+from "A", "A", "O". Read them EXACTLY as printed:
+  • A letter with a small ring/circle above it = "Å" (not "A")
+  • A letter with two dots above it = "Ä" or "Ö" (not "A" or "O")
+Never treat "Å" as a variant of "A" — they are separate codes that each get their own entry.
+If the legend has one row labelled "Å" and two rows labelled "A", the result must be three
+separate entries: one with code "Å" (visual_id "Å") and two with code "A" (visual_id "A_v1",
+"A_v2").
+
 For each symbol return:
-  visual_id        — unique identifier: use the code itself if it appears once (e.g. "KS"),
+  visual_id        — unique identifier: use the code itself if it appears once (e.g. "KS", "Å"),
                      or add "_v1", "_v2" suffix for multiple visual variants of the same code
-  code             — the text label exactly as printed (e.g. "A", "KS", "P11")
+  code             — the text label exactly as printed (e.g. "Å", "A", "KS", "P11")
   name             — full description from the legend text
   description      — 1-2 sentences describing the graphic shape: number of legs/lines,
                      circle/square/triangle, filled/outline, size relative to others, etc.
@@ -1580,24 +1541,23 @@ must be {{ and the last must be }}.
 
 {{
   "symbols": [
-    {{"visual_id": "A_v1", "code": "A", "name": "Armatur 2-rör",
-      "description": "Circle with two downward lines (legs)", "measurement_type": "count"}},
-    {{"visual_id": "A_v2", "code": "A", "name": "Armatur 1-rör",
-      "description": "Circle with one downward line (leg)", "measurement_type": "count"}},
+    {{"visual_id": "Å", "code": "Å", "name": "Återfjädrande strömst. 1-pol",
+      "description": "Person figure with circle head and plain vertical body, no arms", "measurement_type": "count"}},
+    {{"visual_id": "A_v1", "code": "A", "name": "Återfjädrande strömst. 1-pol med DALI",
+      "description": "Person figure with circle head, body and two short horizontal arms at sides", "measurement_type": "count"}},
+    {{"visual_id": "A_v2", "code": "A", "name": "Återfjädrande strömst. KRON med DALI",
+      "description": "Person figure with circle head, body and two wide-spread legs at base", "measurement_type": "count"}},
     {{"visual_id": "KS", "code": "KS", "name": "Kabelstege",
       "description": "Two parallel horizontal lines with cross-bars", "measurement_type": "length"}}
   ]
 }}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=4096,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": legend_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    text = resp.content[0].text
+    try:
+        text = _call_vision([legend_b64], prompt, max_tokens=16384)
+    except Exception as e:
+        print(f"  [AI] Legend vision call failed: {e}")
+        return []
+
     try:
         result = _extract_json(text)
         return result.get("symbols", [])
@@ -1647,15 +1607,7 @@ Rules:
 YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT:
 {{"{visual_id}": <integer count>}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=256,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    text = resp.content[0].text
+    text = _call_vision([body_b64], prompt, max_tokens=256)
     try:
         result = _extract_json(text)
         return int(result.get(visual_id, 0))
@@ -1696,14 +1648,7 @@ YOUR ENTIRE RESPONSE MUST BE ONLY A RAW JSON OBJECT — no explanation, no markd
 The very first character must be {{ and the last must be }}.
 Map each code string to its integer count."""
 
-    resp = _client().messages.create(
-        model=SONNET, max_tokens=1024,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
-    raw_text = resp.content[0].text
+    raw_text = _call_vision([body_b64], prompt, max_tokens=1024)
     print(f"  [PassC raw] {raw_text[:300]}")
     try:
         result = _extract_json(raw_text)
@@ -1772,28 +1717,49 @@ def _count_family_vision(body_b64: str, variants: list[dict],
         for v in variants
     )
     ids_template = ", ".join(f'"{v["visual_id"]}": N' for v in variants)
+    n_variants   = len(variants)
 
     if legend_b64:
         prompt = f"""Swedish building services floor plan.
 IMAGE 1 = legend (FÖRKLARINGAR). IMAGE 2 = full floor plan.
 
-These symbols look similar but have subtle visual differences. Use IMAGE 1 (legend) to identify
-the exact shape of each variant, then count each one separately in IMAGE 2.
+There are {n_variants} visually distinct symbol variants below. They share the same code letter
+but differ in their GRAPHICAL SHAPE. Your task has two steps:
 
-Variants to count:
+STEP 1 — Count the TOTAL number of any of these symbol variants placed in IMAGE 2 (sum of all
+variants combined). Do not count any symbol shown inside the legend box itself.
+Write this as "total": <number>.
+
+STEP 2 — For each instance you found in Step 1, classify it into exactly one variant by
+comparing its specific graphic shape to the legend in IMAGE 1. The sum of all variant counts
+MUST equal your total from Step 1.
+
+Variants — study the legend row for each to note the EXACT shape difference:
 {items}
 
+RULES:
+- If a variant's specific shape does not appear anywhere in IMAGE 2, give it 0.
+- If a shape IS present, do not give it 0 just because it looks similar to another variant.
+- The sum of all variant counts MUST equal "total".
+- Do NOT double-count across variants — each placed instance belongs to exactly one.
+
 Output ONLY this JSON — no other text:
-{{{ids_template}}}"""
+{{"total": N, {ids_template}}}"""
         content = [
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{legend_b64}"}},
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
             {"type": "text", "text": prompt},
         ]
     else:
-        prompt = f"""Count each of these symbols in the floor plan:
+        prompt = f"""Count each of these {n_variants} symbol variants in the floor plan.
+They share the same code letter but differ visually.
+
+STEP 1: Count ALL instances of any variant combined → write as "total".
+STEP 2: Classify each instance into exactly one variant. Sum must equal total.
+If a variant is genuinely absent give it 0, but the sum must still match.
+
 {items}
-Output ONLY: {{{ids_template}}}"""
+Output ONLY: {{"total": N, {ids_template}}}"""
         content = [
             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{body_b64}"}},
             {"type": "text", "text": prompt},
@@ -1821,7 +1787,46 @@ Output ONLY: {{{ids_template}}}"""
         text = data["choices"][0]["message"]["content"] or ""
         print(f"    [vision raw] family {[v['visual_id'] for v in variants]}: {text[:300]}")
         result = _extract_json(text)
-        return {v["visual_id"]: int(result.get(v["visual_id"], 0)) for v in variants}
+        counts = {v["visual_id"]: int(result.get(v["visual_id"], 0)) for v in variants}
+
+        # If the model reported a total, use it as the ground truth for the sum.
+        # When the per-variant sum differs from total, scale proportionally so
+        # the breakdown still reflects the model's distribution but adds up correctly.
+        reported_total = result.get("total")
+        if reported_total is not None:
+            reported_total = int(reported_total)
+            var_sum = sum(counts.values())
+            if var_sum != reported_total and var_sum > 0:
+                scale = reported_total / var_sum
+                counts = {vid: round(c * scale) for vid, c in counts.items()}
+                diff = reported_total - sum(counts.values())
+                if diff != 0:
+                    dominant = max(counts, key=counts.get)
+                    counts[dominant] += diff
+                print(f"    [vision] family sum {var_sum} → rescaled to total {reported_total}: {counts}")
+
+        # Same-code collapse check: when variants sharing the same code letter end up
+        # with one variant taking everything and the others at 0, the model almost
+        # certainly confused them. Redistribute equally within each same-code group.
+        # (Different-code variants — e.g. Å vs A — may legitimately have 0.)
+        from collections import defaultdict as _dd
+        _by_code: dict[str, list[str]] = _dd(list)
+        for v in variants:
+            _by_code[v["code"]].append(v["visual_id"])
+        for code_str, vids in _by_code.items():
+            if len(vids) < 2:
+                continue
+            group_total = sum(counts[vid] for vid in vids)
+            group_zeros = sum(1 for vid in vids if counts[vid] == 0)
+            if group_zeros == len(vids) - 1 and group_total > 0:
+                # All on one — split evenly across the code group
+                per = group_total // len(vids)
+                rem = group_total % len(vids)
+                for i, vid in enumerate(vids):
+                    counts[vid] = per + (1 if i < rem else 0)
+                print(f"    [vision] same-code '{code_str}' collapse → split evenly: {counts}")
+
+        return counts
     except Exception as exc:
         print(f"  [Vision] family count failed: {exc}")
         return {v["visual_id"]: None for v in variants}
@@ -1940,16 +1945,8 @@ Items to measure:
 Return ONLY a JSON object mapping visual_id to an object with "length_m" (float) and "count" (int, number of distinct runs/segments):
 {{{{"KS": {{{{"length_m": 45.5, "count": 3}}}}, "KR": {{{{"length_m": 12.0, "count": 1}}}}}}}}"""
 
-    resp = _client().messages.create(
-        model=SONNET,
-        max_tokens=512,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": body_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
-    )
     try:
-        result = _extract_json(resp.content[0].text)
+        result = _extract_json(_call_vision([body_b64], prompt, max_tokens=512))
         out = {}
         for k, v in result.items():
             if isinstance(v, dict):
@@ -2011,7 +2008,7 @@ def extract_with_images(legend_path: str, body_path: str,
 
     # ── Step 1: legend analysis ──────────────────────────────────────────────
     _emit({"type": "phase", "phase": "legend", "msg": "Analysing legend…"})
-    _leg_cache_key = f"legend_{_leg_hash}"
+    _leg_cache_key = f"legend5_{_leg_hash}"
     _cached_leg = _step_cache_get(_leg_cache_key)
     if _cached_leg is not None:
         symbols = _cached_leg
@@ -2020,15 +2017,14 @@ def extract_with_images(legend_path: str, body_path: str,
         print("  [AI] Analysing legend image …")
         try:
             symbols = _analyse_legend_image(legend_b64, component_library)
-            # Validate before caching: duplicate codes indicate a bad parse.
-            # A correct legend has each code appear exactly once; duplicates mean
-            # the AI mis-classified two visually different symbols as the same code,
-            # which corrupts the unique/variant routing for all subsequent runs.
-            _dup_codes = {c for c, n in collections.Counter(
-                s["code"] for s in symbols if s.get("measurement_type") == "count"
+            # Validate before caching: duplicate visual_ids indicate a bad parse.
+            # Same code appearing multiple times with different visual_ids (e.g.
+            # A_v1/A_v2) is intentional; same visual_id appearing twice is not.
+            _dup_vids = {v for v, n in collections.Counter(
+                s["visual_id"] for s in symbols
             ).items() if n > 1}
-            if _dup_codes:
-                print(f"  [AI] Legend rejected — duplicate codes {_dup_codes}; "
+            if _dup_vids:
+                print(f"  [AI] Legend rejected — duplicate visual_ids {_dup_vids}; "
                       f"delete {AI_CACHE_DIR / f'step_{_leg_cache_key}.json'} to re-analyse")
                 symbols = []
             else:
@@ -2096,7 +2092,7 @@ def extract_with_images(legend_path: str, body_path: str,
     # labels in the floor plan and are handled here.  Legend-parser artifacts (e.g.
     # "RA" misread from a glyph) have code_freq > 1 or non-ASCII, so they are still
     # routed to vision via the code_freq check above.
-    _PDF_SEARCHABLE = re.compile(r'^[A-Za-z]([0-9][A-Za-z0-9\-]*)?$')
+    _PDF_SEARCHABLE = re.compile(r'^[A-Za-zÅÄÖåäö]([0-9][A-Za-z0-9\-]*)?$')
 
     # Single-letter codes get an extra "shadow" check: if any OTHER legend code
     # would cause false positives in PDF text search for that letter, route to vision.
@@ -2241,7 +2237,7 @@ def extract_with_images(legend_path: str, body_path: str,
                 _fam_hash = hashlib.sha1(
                     "|".join(sorted(s["visual_id"] for s in fam)).encode()
                 ).hexdigest()[:12]
-                _d_key    = f"pass_d_{_model_slug}_{_body_hash}_{_fam_hash}"
+                _d_key    = f"pass_d4_{_model_slug}_{_body_hash}_{_fam_hash}"
                 _cached_d = _step_cache_get(_d_key)
 
                 if _cached_d is not None:
