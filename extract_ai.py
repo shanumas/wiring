@@ -1723,8 +1723,8 @@ def _count_family_vision(body_b64: str, variants: list[dict],
         prompt = f"""Swedish building services floor plan.
 IMAGE 1 = legend (FÖRKLARINGAR). IMAGE 2 = full floor plan.
 
-There are {n_variants} visually distinct symbol variants below. They share the same code letter
-but differ in their GRAPHICAL SHAPE. Your task has two steps:
+There are {n_variants} symbol variants below. They look similar at small scale but differ in
+their GRAPHICAL SHAPE. Your task has two steps:
 
 STEP 1 — Count the TOTAL number of any of these symbol variants placed in IMAGE 2 (sum of all
 variants combined). Do not count any symbol shown inside the legend box itself.
@@ -1738,11 +1738,12 @@ Variants — study the legend row for each to note the EXACT shape difference:
 {items}
 
 RULES:
+- Symbols may appear at ANY rotation angle in the floor plan — count them regardless of orientation.
+- Judge each symbol by its SHAPE, not its angle. A rotated symbol is still the same symbol.
 - If a variant's specific shape does not appear anywhere in IMAGE 2, give it 0.
 - If a shape IS present, do not give it 0 just because it looks similar to another variant.
 - The sum of all variant counts MUST equal "total".
 - Do NOT double-count across variants — each placed instance belongs to exactly one.
-
 Output ONLY this JSON — no other text:
 {{"total": N, {ids_template}}}"""
         content = [
@@ -1752,12 +1753,14 @@ Output ONLY this JSON — no other text:
         ]
     else:
         prompt = f"""Count each of these {n_variants} symbol variants in the floor plan.
-They share the same code letter but differ visually.
+They look similar but differ in graphical shape.
 
 STEP 1: Count ALL instances of any variant combined → write as "total".
 STEP 2: Classify each instance into exactly one variant. Sum must equal total.
 If a variant is genuinely absent give it 0, but the sum must still match.
 
+RULES:
+- Symbols may appear at ANY rotation angle — count by SHAPE, not angle.
 {items}
 Output ONLY: {{"total": N, {ids_template}}}"""
         content = [
@@ -1767,8 +1770,11 @@ Output ONLY: {{"total": N, {ids_template}}}"""
 
     try:
         payload = {
+            # Gemini "pro" is a thinking model: reasoning tokens are billed against
+            # max_tokens, so a low budget can leave the content field empty. Give it
+            # ample room (8192) so the JSON answer is always emitted.
             "model": _model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "messages": [{"role": "user", "content": content}],
         }
         http_resp = _CLIENT_VISION.post(
@@ -1805,31 +1811,95 @@ Output ONLY: {{"total": N, {ids_template}}}"""
                     counts[dominant] += diff
                 print(f"    [vision] family sum {var_sum} → rescaled to total {reported_total}: {counts}")
 
-        # Same-code collapse check: when variants sharing the same code letter end up
-        # with one variant taking everything and the others at 0, the model almost
-        # certainly confused them. Redistribute equally within each same-code group.
-        # (Different-code variants — e.g. Å vs A — may legitimately have 0.)
+        # Even-split look-alike variants.
+        # Variants that share the SAME code AND ≥3 meaningful description words are
+        # visually indistinguishable at floor-plan scale (e.g. A_v1 = circle+stem+1 spring,
+        # A_v2 = circle+stem+2 springs — the spring count is invisible when the symbol is
+        # ~15 px). The model's split between them is therefore unreliable: it dumps all on
+        # one (6,0), makes a skewed guess (5,1), or splits arbitrarily. The only unbiased
+        # estimate is to divide their COMBINED total evenly. This collapses 6,0 / 5,1 / 3,3
+        # all to 3,3 and never changes the sub-group's total (so it can't inflate counts).
+        # Different-code variants (e.g. Å vs A) are left untouched — they may legitimately
+        # differ or be zero.
+        _stop_words = {"a", "an", "the", "with", "and", "or", "in", "on", "at", "to",
+                       "of", "is", "are", "its", "that", "this", "which", "from", "has",
+                       "have", "into", "for", "per", "two", "one", "same"}
+        def _desc_words(sym: dict) -> set:
+            text = sym.get("description") or ""
+            return {w.lower().rstrip("s") for w in re.findall(r'\b[a-zA-Z]{3,}\b', text)
+                    if w.lower() not in _stop_words}
+
+        _sym_by_vid = {v["visual_id"]: v for v in variants}
         from collections import defaultdict as _dd
         _by_code: dict[str, list[str]] = _dd(list)
         for v in variants:
             _by_code[v["code"]].append(v["visual_id"])
+
+        _split_done: set[str] = set()
         for code_str, vids in _by_code.items():
             if len(vids) < 2:
                 continue
-            group_total = sum(counts[vid] for vid in vids)
-            group_zeros = sum(1 for vid in vids if counts[vid] == 0)
-            if group_zeros == len(vids) - 1 and group_total > 0:
-                # All on one — split evenly across the code group
-                per = group_total // len(vids)
-                rem = group_total % len(vids)
-                for i, vid in enumerate(vids):
+            for seed in vids:
+                if seed in _split_done:
+                    continue
+                words_seed = _desc_words(_sym_by_vid.get(seed, {}))
+                group = [seed] + [
+                    v for v in vids
+                    if v != seed and v not in _split_done
+                    and len(words_seed & _desc_words(_sym_by_vid.get(v, {}))) >= 3
+                ]
+                if len(group) < 2:
+                    continue
+                sub_total = sum(counts[v] for v in group)
+                _split_done.update(group)
+                if sub_total <= 0:
+                    continue
+                per = sub_total // len(group)
+                rem = sub_total % len(group)
+                for i, vid in enumerate(group):
                     counts[vid] = per + (1 if i < rem else 0)
-                print(f"    [vision] same-code '{code_str}' collapse → split evenly: {counts}")
+                print(f"    [vision] look-alike group {group} combined={sub_total} "
+                      f"→ even split: {[counts[v] for v in group]}")
 
         return counts
     except Exception as exc:
         print(f"  [Vision] family count failed: {exc}")
         return {v["visual_id"]: None for v in variants}
+
+
+def _count_family_vision_voted(body_b64: str, variants: list[dict],
+                               legend_b64: str | None = None,
+                               model: str | None = None,
+                               n: int = 3) -> dict[str, int | None]:
+    """Run the joint family count n times and take the per-variant mode.
+
+    The Gemini "pro" thinking model has real per-call variance: it occasionally
+    undercounts the total (e.g. 4 instead of 6) or returns an empty response
+    (all-None). A single call is therefore not reliable. Voting across a few runs
+    and taking the most common value per variant smooths out both failure modes.
+    Ties break toward the LARGER count, since the model's errors are undercounts.
+    """
+    runs: list[dict[str, int | None]] = []
+    for _ in range(max(1, n)):
+        r = _count_family_vision(body_b64, variants, legend_b64, model)
+        if any(v is not None for v in r.values()):
+            runs.append(r)
+    if not runs:
+        return {v["visual_id"]: None for v in variants}
+    voted: dict[str, int | None] = {}
+    for v in variants:
+        vid = v["visual_id"]
+        vals = [r.get(vid) for r in runs if r.get(vid) is not None]
+        if not vals:
+            voted[vid] = None
+            continue
+        tally = collections.Counter(vals)
+        top   = max(tally.values())
+        voted[vid] = max(val for val, c in tally.items() if c == top)
+    if len(runs) > 1:
+        print(f"    [vision] voted over {len(runs)} run(s): "
+              f"{[r and {k: r.get(k) for k in r} for r in runs]} → {voted}")
+    return voted
 
 
 def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
@@ -1870,9 +1940,21 @@ def _count_variant_qwen(body_b64: str, visual_id: str, code: str, name: str,
         prompt = f"""Swedish building services floor plan.
 IMAGE 1 = legend (FÖRKLARINGAR). IMAGE 2 = full floor plan.
 
-Count every occurrence of the symbol {_ref_phrase} in IMAGE 2.
-Do NOT count the legend entry in IMAGE 1 — only real installed items in the floor plan.
-Visual description: {description}
+STEP 1 — In IMAGE 1 (the legend), find the row whose label text reads "{name}".
+Look carefully at the EXACT graphical glyph drawn at the start of that row. THAT specific
+glyph shape is the symbol you must count — note its distinctive features (does it have a
+circle? a stem? curves? loops?).
+
+STEP 2 — Count how many times that EXACT glyph shape appears in IMAGE 2 (the floor plan).
+The text hint below is approximate and may be WRONG — if it conflicts with the glyph you
+actually see in the legend row, TRUST THE LEGEND GLYPH, not the text.
+  Rough text hint: {description}
+
+RULES:
+- Do NOT count the legend itself — only real installed items in IMAGE 2.
+- Symbols may appear at ANY rotation angle — match by SHAPE, not angle.
+- If that exact glyph shape does not appear in IMAGE 2 at all, the answer is 0. Do not
+  count a different-looking symbol just because it seems related.
 {excl_block}
 Output ONLY a JSON object — no other text:
 {{"{visual_id}": N}}"""
@@ -1889,6 +1971,7 @@ Count instances of this specific symbol:
   Code: "{code}"
   Name: {name}
   Visual appearance: {description}
+NOTE: Symbols may appear at ANY rotation angle — count by SHAPE, not angle.
 {excl_block}
 Reply ONLY with a JSON object, nothing else:
 {{"{visual_id}": <integer>}}"""
@@ -2222,22 +2305,81 @@ def extract_with_images(legend_path: str, body_path: str,
             _model_slug = hashlib.sha1(VISION_MODEL.encode()).hexdigest()[:6]
 
             # Group into families: symbols whose visual_id shares a ≥3-char prefix
+            # AND whose descriptions overlap by ≥3 meaningful words.
+            # The description check prevents visually different symbols from being
+            # grouped together just because they happen to share a prefix
+            # (e.g. A_v1/A_v2=spring-return switches vs A_v3=circle-A indicator).
+            _fam_stop = {"a", "an", "the", "with", "and", "or", "in", "on", "at", "to",
+                         "of", "is", "are", "its", "that", "this", "which", "from",
+                         "has", "have", "into", "for", "per", "two", "one", "same"}
+            def _fam_words(sym: dict) -> frozenset:
+                # Use description only (not name) — description captures visual shape;
+                # name is Swedish functional text which shares common words like "med"
+                # across unrelated symbols and would create false groupings.
+                text = sym.get("description") or ""
+                return frozenset(
+                    w.lower().rstrip("s") for w in re.findall(r'\b[a-zA-Z]{3,}\b', text)
+                    if w.lower() not in _fam_stop
+                )
+
             _families: list[list[dict]] = []
             for sym in variant_syms:
                 placed = False
+                sym_words = _fam_words(sym)
                 for fam in _families:
-                    if len(os.path.commonprefix([sym["visual_id"], fam[0]["visual_id"]])) >= 3:
+                    prefix_ok = len(os.path.commonprefix(
+                        [sym["visual_id"], fam[0]["visual_id"]])) >= 3
+                    desc_ok   = len(sym_words & _fam_words(fam[0])) >= 3
+                    if prefix_ok and desc_ok:
                         fam.append(sym)
                         placed = True
                         break
                 if not placed:
                     _families.append([sym])
 
+            # Merge confusable families. Two families are confusable when any member of
+            # one shares ≥3 description words with any member of the other — they look
+            # alike at floor-plan scale (e.g. DUBBELTRAPP vs the A spring-return switches,
+            # especially when A symbols appear rotated). Counting such symbols SEPARATELY
+            # produces false positives: a symbol that is actually absent (DUBBELTRAPP)
+            # grabs instances of the present symbol. Counting them JOINTLY in one two-step
+            # call forces the model to assign each instance to exactly one variant, so the
+            # absent shape correctly gets 0 and the present total is split among the real
+            # variants by the per-code redistribution inside _count_family_vision.
+            _fam_words_cache: list[list[frozenset]] = [
+                [_fam_words(s) for s in fam] for fam in _families
+            ]
+            def _fams_confusable(i: int, j: int) -> bool:
+                return any(
+                    len(wi & wj) >= 3
+                    for wi in _fam_words_cache[i]
+                    for wj in _fam_words_cache[j]
+                )
+            # Union-find over family indices.
+            _parent = list(range(len(_families)))
+            def _find(x: int) -> int:
+                while _parent[x] != x:
+                    _parent[x] = _parent[_parent[x]]
+                    x = _parent[x]
+                return x
+            for i in range(len(_families)):
+                for j in range(i + 1, len(_families)):
+                    if _fams_confusable(i, j):
+                        _parent[_find(i)] = _find(j)
+            _merged_map: dict[int, list[dict]] = {}
+            for idx, fam in enumerate(_families):
+                _merged_map.setdefault(_find(idx), []).extend(fam)
+            _orig_count = len(_families)
+            _families = list(_merged_map.values())
+            if len(_families) != _orig_count:
+                print(f"    [family] merged {_orig_count} families → {len(_families)} "
+                      f"(confusable groups counted jointly)")
+
             for fam in _families:
                 _fam_hash = hashlib.sha1(
                     "|".join(sorted(s["visual_id"] for s in fam)).encode()
                 ).hexdigest()[:12]
-                _d_key    = f"pass_d4_{_model_slug}_{_body_hash}_{_fam_hash}"
+                _d_key    = f"pass_d12_{_model_slug}_{_body_hash}_{_fam_hash}"
                 _cached_d = _step_cache_get(_d_key)
 
                 if _cached_d is not None:
@@ -2274,7 +2416,7 @@ def extract_with_images(legend_path: str, body_path: str,
                 else:
                     vids_str = ", ".join(s["visual_id"] for s in fam)
                     print(f"    [family] counting jointly: {vids_str}")
-                    results = _count_family_vision(body_b64, fam, legend_b64)
+                    results = _count_family_vision_voted(body_b64, fam, legend_b64)
                     if any(v is not None for v in results.values()):
                         _step_cache_set(_d_key, {v: results.get(v) for v in results})
                     for sym in fam:

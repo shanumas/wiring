@@ -26,7 +26,8 @@ from extract_vector import extract_vectors
 from estimate import estimate, COST_TABLE, COST_FALLBACK_PER_M
 from extract_ai import (build_component_library, load_component_library,
                         extract_with_ai, load_ai_cache, _ai_cache_path,
-                        extract_with_images, load_images_cache, _images_cache_key)
+                        extract_with_images, load_images_cache, _images_cache_key,
+                        VISION_MODEL)
 
 
 # ── Startup API key checks ────────────────────────────────────────────────────
@@ -596,6 +597,11 @@ def get_library():
     if _component_library is None:
         return JSONResponse({"components": [], "status": "not_built"}, headers=NO_CACHE)
     return JSONResponse({**_component_library, "status": "ready"}, headers=NO_CACHE)
+
+
+@app.get("/model")
+def get_model():
+    return {"model": VISION_MODEL}
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -20,7 +20,8 @@
       "WebSearch",
       "PowerShell(Get-Content \"D:\\\\wiring\\\\ai_cache\\\\step_legend2_98737a94a467.json\" | ConvertFrom-Json | ForEach-Object { $_ } | ConvertTo-Json -Depth 5)",
       "PowerShell(Get-Content \"D:\\\\wiring\\\\ai_cache\\\\step_legend4_98737a94a467.json\" | python -c \"import json,sys; syms=json.load\\(sys.stdin\\); print\\(f'Count: {len\\(syms\\)}'\\); [print\\(f'  {s[\\\\\"visual_id\\\\\"]:20} code={repr\\(s[\\\\\"code\\\\\"]\\):20} [{s[\\\\\"measurement_type\\\\\"]}]'\\) for s in syms]\")",
-      "PowerShell(Get-Item *)"
+      "PowerShell(Get-Item *)",
+      "Bash(grep -o 'OPENROUTER_API_KEY=.\\\\{0,8\\\\}' .env)"
     ]
   }
 }
